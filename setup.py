@@ -37,7 +37,7 @@ setup(
     license='MIT',
      entry_points={
          'console_scripts': [
-            f'fgs_node = {package_name}.fgs_node:main',
+            f'image_inference_node = {package_name}.image_inference_node:main',
             f'perception_adapter = {package_name}.perception_adapter:main',
          ],
      },

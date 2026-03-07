@@ -11,10 +11,10 @@ def generate_launch_description():
     params_file = os.path.join(package_dir, 'config', 'params.yaml')
     
     # Define nodes
-    fgs_node = Node(
+    image_inference_node = Node(
         package='ros2_image_inference',
-        executable='fgs_node',
-        name='fgs_node',
+        executable='image_inference_node',
+        name='image_inference_node',
         output='screen'
     )
     
@@ -28,6 +28,6 @@ def generate_launch_description():
     
     # Launch description
     return LaunchDescription([
-        fgs_node,
+        image_inference_node,
         perception_adapter_node
     ])
