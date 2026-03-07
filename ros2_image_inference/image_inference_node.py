@@ -38,6 +38,8 @@ class ImageInferenceNode(Node):
         self.setup_timer = self.create_timer(self.startup_delay_sec, self.setup)  # Call setup after startup delay
         self.loop_timer = self.create_timer(self.ticker_interval_sec, self.loop_callback)  # Call often
 
+        # Need an image subscription here to get the image data, for now we will just load an image from disk in setup() and send it to the server
+
         self.detection_pub = self.create_publisher(Detection2DArray, 'image_inference_detections', 10)  # Add publisher
 
         self.server_ready = False  # Flag to indicate sensor is initialized
@@ -78,9 +80,7 @@ class ImageInferenceNode(Node):
 
     def setup(self):
         """
-        @brief Setup function for initializing sensor thresholds.
-        
-        This function gets the thresholds for face detection and gesture detection.
+        @brief Setup function for initializing and initial testing of the TCP/IP server.
         """
         # This will be called after 5 seconds - let the sensor to start.
 
@@ -107,8 +107,9 @@ class ImageInferenceNode(Node):
 
 
     def loop_callback(self):
-        # This method will be called every 500 ms
-        #self.get_logger().info('Periodic callback triggered')
+        # should be rather called from the image subscription callback, but for testing we will call it from the timer callback
+
+        #self.get_logger().info('Image received')
 
         if not self.server_ready:
             return
