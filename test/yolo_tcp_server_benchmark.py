@@ -27,7 +27,7 @@ import time
 import cv2
 
 
-SERVER_HOST = "127.0.0.1"
+SERVER_HOST = "172.17.1.164"  # Jetson Nano "host" IP address (not container)
 SERVER_PORT = 5001
 REQUESTS = 20
 

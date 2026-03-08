@@ -35,13 +35,13 @@ class PerceptionAdapter(Node):
         super().__init__("perception_adapter")
 
         # ---- parameters ----
+        self.declare_parameter("ticker_interval_sec", 0.1)
         self.declare_parameter("detection_topic", "/image_inference_detections")
         self.declare_parameter("face_detected_sound", "")
         self.declare_parameter("face_detected_text", "")
         self.declare_parameter("min_confidence", 0.6)
         self.declare_parameter("face_cooldown_sec", 3.0)
         self.declare_parameter("camera_center_x", 320.0)
-        self.declare_parameter("ticker_interval_sec", 0.1)
 
         # What label should be treated as the "trackable target" (old "FACE")
         self.declare_parameter("target_label", "person")

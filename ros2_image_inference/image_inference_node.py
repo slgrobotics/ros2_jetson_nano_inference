@@ -20,7 +20,7 @@ from vision_msgs.msg import (
     ObjectHypothesis,
 )
 
-from inference_response_parser import parse_inference_response, InferenceResult
+from .inference_response_parser import parse_inference_response, InferenceResult
 
 
 class ImageInferenceNode(Node):

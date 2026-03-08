@@ -3,16 +3,21 @@
 image_inference_node:
   ros__parameters:
     ticker_interval_sec: 0.1
-    face_detect_threshold: 60     # 0..100
-    gesture_detect_threshold: 60  # 0..100
-    gesture_detect_range: 100     # 0..100 (percent of max distance)
+    #server_host: '127.0.0.1'
+    server_host: '172.17.1.164'  # Jetson Nano "host" IP address (not container)
+    server_port: 5001
+    startup_delay_sec: 5.0
+    image_topic: '/camera/image_raw/compressed'
+    frame_id_out: "camera"
 
 # Perception adapter (BT topics relay) configuration
 perception_adapter:
   ros__parameters:
-    #face_detected_sound: "my_face.wav"
-    face_detected_text: "I see you!"
+    ticker_interval_sec: 0.1
+    detection_topic: '/image_inference_detections'
+    #face_detected_sound: 'my_face.wav'
+    face_detected_text: 'I see you!'
     min_confidence: 0.6
     face_cooldown_sec: 2.0
     camera_center_x: 320.0
-    ticker_interval_sec: 0.1
+    target_label: 'person'
