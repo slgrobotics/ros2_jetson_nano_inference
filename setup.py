@@ -13,7 +13,7 @@ setup(
     name=package_name,
     version='0.1.0',
     #packages=find_packages(),
-    packages=[package_name, package_name + '/utils'],
+    packages=[package_name],
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
@@ -22,13 +22,11 @@ setup(
         (os.path.join('share', package_name, 'launch'), glob(os.path.join('launch', '*launch.[pxy][yma]*'))),
         # config files
         (os.path.join('share', package_name, 'config'), glob(os.path.join('config', '*.yaml'))),
+        # media files
+        (os.path.join('share', package_name, 'media'), glob(os.path.join('media', '*.*'))),
     ],
     install_requires=[
         'setuptools',
-        'serial',
-        'smbus2',
-        #'DFRobot_GestureFaceDetection',
-        #'DFRobot_RTU'
         ],
     zip_safe=True,
     maintainer='Sergei Grichine',
@@ -38,7 +36,7 @@ setup(
      entry_points={
          'console_scripts': [
             f'image_inference_node = {package_name}.image_inference_node:main',
-            f'perception_adapter = {package_name}.perception_adapter:main',
+            #f'perception_adapter = {package_name}.perception_adapter:main',
          ],
      },
 )

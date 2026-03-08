@@ -3,19 +3,15 @@
 <package format="3">
   <name>ros2_image_inference</name>
   <version>0.1.0</version>
-  <description>Face and Gesture detection node</description>
-  <!-- based on https://github.com/DFRobot/DFRobot_GestureFaceDetection/tree/master/python/raspberrypi  -->
+  <description>Image inference client node</description>
   <maintainer email="slg@quakemap.com">Sergei Grichine</maintainer>
-  <!-- preserving original DFRobot license -->
   <license>MIT</license>
 
   <depend>rclpy</depend>
   <depend>setuptools</depend>
   
-  <exec_depend>python3-serial</exec_depend>
   <exec_depend>vision_msgs</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
-  <exec_depend>python3-smbus</exec_depend>
 
   <buildtool_depend>ament_python</buildtool_depend>
 
