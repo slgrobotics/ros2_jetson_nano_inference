@@ -1,53 +1,82 @@
-import rclpy
-from rclpy.node import Node
-from rclpy.timer import Timer
-from datetime import datetime
-
-from std_msgs.msg import Header
-from vision_msgs.msg import Point2D, Pose2D, BoundingBox2D, Detection2D, Detection2DArray, ObjectHypothesisWithPose, ObjectHypothesis
-
 import json
 import socket
 import struct
 import time
-import cv2
+from datetime import datetime
+from typing import Optional
 
-from inference_response_parser import parse_inference_response, InferenceResult, Detection
+import rclpy
+from rclpy.node import Node
 
-#
-# ros2 run ros2_image_inference image_inference_node
-#
+from std_msgs.msg import Header
+from sensor_msgs.msg import CompressedImage
+from vision_msgs.msg import (
+    Point2D,
+    Pose2D,
+    BoundingBox2D,
+    Detection2D,
+    Detection2DArray,
+    ObjectHypothesisWithPose,
+    ObjectHypothesis,
+)
+
+from inference_response_parser import parse_inference_response, InferenceResult
+
 
 class ImageInferenceNode(Node):
-
     def __init__(self):
-        super().__init__('image_inference_node')  # Initialize the Node with a unique name
+        super().__init__("image_inference_node")
 
-        self.declare_parameter('ticker_interval_sec', 0.1)     # Ticker interval (defines rate or publishing all messages)
-        self.declare_parameter('server_host', '127.0.0.1')
-        self.declare_parameter('server_port', 5001)
-        self.declare_parameter('startup_delay_sec', 5.0)  # Delay before starting the main loop
+        self.declare_parameter("ticker_interval_sec", 0.1)
+        self.declare_parameter("server_host", "127.0.0.1")
+        self.declare_parameter("server_port", 5001)
+        self.declare_parameter("startup_delay_sec", 5.0)
+        self.declare_parameter("image_topic", "/camera/image_raw/compressed")
+        self.declare_parameter("frame_id_out", "camera")
 
-        self.ticker_interval_sec = self.get_parameter('ticker_interval_sec').get_parameter_value().double_value
-        self.server_host = self.get_parameter('server_host').get_parameter_value().string_value
-        self.server_port = self.get_parameter('server_port').get_parameter_value().integer_value
-        self.startup_delay_sec = self.get_parameter('startup_delay_sec').get_parameter_value().double_value
+        self.ticker_interval_sec = self.get_parameter("ticker_interval_sec").value
+        self.server_host = self.get_parameter("server_host").value
+        self.server_port = self.get_parameter("server_port").value
+        self.startup_delay_sec = self.get_parameter("startup_delay_sec").value
+        self.image_topic = self.get_parameter("image_topic").value
+        self.frame_id_out = self.get_parameter("frame_id_out").value
 
-        self.get_logger().info('OK: Image Inference node has been started!')
+        self.get_logger().info("Image Inference node started")
 
-        self.setup_timer = self.create_timer(self.startup_delay_sec, self.setup)  # Call setup after startup delay
-        self.loop_timer = self.create_timer(self.ticker_interval_sec, self.loop_callback)  # Call often
+        self.detection_pub = self.create_publisher(
+            Detection2DArray, "image_inference_detections", 10
+        )
 
-        # Need an image subscription here to get the image data, for now we will just load an image from disk in setup() and send it to the server
+        self.image_sub = self.create_subscription(
+            CompressedImage,
+            self.image_topic,
+            self.image_callback,
+            10,
+        )
 
-        self.detection_pub = self.create_publisher(Detection2DArray, 'image_inference_detections', 10)  # Add publisher
+        self.setup_timer = self.create_timer(self.startup_delay_sec, self.setup)
+        self.loop_timer = self.create_timer(self.ticker_interval_sec, self.loop_callback)
 
-        self.server_ready = False  # Flag to indicate sensor is initialized
-        self.print_time_counter = 0  # Add a counter for print_time()
-        self.start_time = datetime.now()  # Store program start time
-        
+        self.server_ready = False
+        self.sock: Optional[socket.socket] = None
 
-    def recv_exact(self, sock, n):
+        self.latest_jpg: Optional[bytes] = None
+        self.latest_image_stamp = None
+        self.latest_source_frame_id = ""
+        self.latest_image_seq = 0
+        self.last_sent_seq = -1
+
+        self.print_time_counter = 0
+        self.start_time = datetime.now()
+
+    def image_callback(self, msg: CompressedImage) -> None:
+        # Keep latest only
+        self.latest_jpg = bytes(msg.data)
+        self.latest_image_stamp = msg.header.stamp
+        self.latest_source_frame_id = msg.header.frame_id
+        self.latest_image_seq += 1
+
+    def recv_exact(self, sock: socket.socket, n: int) -> bytes:
         chunks = []
         remaining = n
         while remaining > 0:
@@ -58,8 +87,7 @@ class ImageInferenceNode(Node):
             remaining -= len(chunk)
         return b"".join(chunks)
 
-
-    def send_request(self, sock, frame_id, jpg_bytes):
+    def send_request(self, sock: socket.socket, frame_id: int, jpg_bytes: bytes) -> None:
         header = {
             "frame_id": frame_id,
             "timestamp_ns": time.time_ns(),
@@ -71,119 +99,141 @@ class ImageInferenceNode(Node):
         sock.sendall(hdr)
         sock.sendall(jpg_bytes)
 
-
-    def recv_response(self, sock):
+    def recv_response(self, sock: socket.socket) -> dict:
         n = struct.unpack(">I", self.recv_exact(sock, 4))[0]
         data = self.recv_exact(sock, n)
         return json.loads(data.decode("utf-8"))
 
+    def connect_server(self) -> None:
+        if self.sock is not None:
+            try:
+                self.sock.close()
+            except Exception:
+                pass
+            self.sock = None
 
-    def setup(self):
-        """
-        @brief Setup function for initializing and initial testing of the TCP/IP server.
-        """
-        # This will be called after 5 seconds - let the sensor to start.
-
-        self.get_logger().info('IP: establishing connection to the server...')
-
-        IMAGE_PATH = "../media/duckies_2_480x480.jpg"
-
-        self.get_logger().info(f"Loading image from {IMAGE_PATH}...")
-
-        img = cv2.imread(IMAGE_PATH)
-        ok, enc = cv2.imencode(".jpg", img)
-        jpg = enc.tobytes()
-
-        with socket.create_connection((self.server_host, self.server_port), timeout=10) as sock:
-            self.sock = sock
-            self.send_request(sock, 1, jpg)
-            sock_response = self.recv_response(sock)
-            self.get_logger().info(json.dumps(sock_response, indent=2))
-
+        self.get_logger().info(
+            f"Connecting to inference server at {self.server_host}:{self.server_port}..."
+        )
+        self.sock = socket.create_connection((self.server_host, self.server_port), timeout=10)
+        self.sock.settimeout(10.0)
         self.server_ready = True
+        self.get_logger().info("Connected to inference server")
 
-        self.get_logger().info('OK: Connection to the server established, server is ready')
-        self.setup_timer.cancel()  # Cancel the setup timer
-
-
-    def loop_callback(self):
-        # should be rather called from the image subscription callback, but for testing we will call it from the timer callback
-
-        #self.get_logger().info('Image received')
-
-        if not self.server_ready:
+    def setup(self) -> None:
+        try:
+            self.connect_server()
+        except Exception as e:
+            self.server_ready = False
+            self.get_logger().error(f"Failed to connect to inference server: {e}")
             return
 
-        self.send_request(self.sock, 1, jpg)
-        sock_response = self.recv_response(self.sock)
+        self.setup_timer.cancel()
+
+    def build_detection_array_msg(self, result: InferenceResult) -> Detection2DArray:
+        msg = Detection2DArray()
+
+        header = Header()
+        header.stamp = self.get_clock().now().to_msg()
+        header.frame_id = self.latest_source_frame_id or self.frame_id_out
+        msg.header = header
+
+        for d in result.detections:
+            x1, y1, x2, y2 = d.bbox_xyxy
+            cx, cy, w, h = d.bbox_xywh
+
+            detection = Detection2D()
+            detection.header = header
+
+            center = Pose2D()
+            center.position = Point2D(x=float(cx), y=float(cy))
+            center.theta = 0.0
+
+            bbox = BoundingBox2D()
+            bbox.center = center
+            bbox.size_x = float(w)
+            bbox.size_y = float(h)
+            detection.bbox = bbox
+
+            hypothesis = ObjectHypothesisWithPose()
+            hypothesis.hypothesis = ObjectHypothesis()
+            hypothesis.hypothesis.class_id = str(d.class_id)
+            hypothesis.hypothesis.score = float(d.confidence)
+
+            detection.results.append(hypothesis)
+
+            msg.detections.append(detection)
+
+        return msg
+
+    def loop_callback(self) -> None:
+        if not self.server_ready or self.sock is None:
+            return
+
+        if self.latest_jpg is None:
+            return
+
+        # Avoid resending the same frame over and over
+        if self.latest_image_seq == self.last_sent_seq:
+            return
+
+        frame_seq = self.latest_image_seq
+        jpg = self.latest_jpg
+
+        try:
+            self.send_request(self.sock, frame_seq, jpg)
+            sock_response = self.recv_response(self.sock)
+            result = parse_inference_response(json.dumps(sock_response))
+            self.last_sent_seq = frame_seq
+        except Exception as e:
+            self.get_logger().error(f"Inference request failed: {e}")
+            self.server_ready = False
+            try:
+                if self.sock is not None:
+                    self.sock.close()
+            except Exception:
+                pass
+            self.sock = None
+
+            try:
+                self.connect_server()
+            except Exception as reconnect_error:
+                self.get_logger().error(f"Reconnect failed: {reconnect_error}")
+            return
 
         self.print_time()
 
-        json_str = sock_response.decode("utf-8")   # example
-
-        result = parse_inference_response(json_str)
-
-        self.get_logger().info(f"Frame ID: {result.frame_id}")
-        self.get_logger().info(f"Inference Time: {result.infer_ms} ms")
-
-        num_detections = len(result.detections)
-
-        # Check if any detections are present:
-        if num_detections > 0:
-            self.get_logger().info("Number of detections: {}".format(num_detections))
+        self.get_logger().debug(
+            f"frame_id={result.frame_id} infer_ms={result.infer_ms:.1f} "
+            f"queue_delay_ms={result.queue_delay_ms:.1f} detections={len(result.detections)}"
+        )
 
         for d in result.detections:
-            self.get_logger().info(f"Detection: {d.label}, Confidence: {d.confidence}, BBox: {d.bbox_xyxy}")
+            self.get_logger().info(
+                f"Detection: label={d.label}, class_id={d.class_id}, "
+                f"confidence={d.confidence:.3f}, bbox={d.bbox_xyxy}"
+            )
 
-            # Get object score and position coordinates
-            object_score = d.confidence
-            object_x = d.bbox_xyxy[0]  # Assuming bbox_xyxy is a list [x1, y1, x2, y2]
-            object_y = d.bbox_xyxy[1]
+        detection_array_msg = self.build_detection_array_msg(result)
+        self.detection_pub.publish(detection_array_msg)
 
-            self.get_logger().info("Detect object at (x = {}, y = {}, score = {})".format(object_x, object_y, object_score))
-            
-            detection_array_msg = Detection2DArray()
-            header = Header()
-            header.stamp = self.get_clock().now().to_msg()
-            header.frame_id = "object_gesture_sensor"  # or another appropriate frame
-            detection_array_msg.header = header
-
-            center = Pose2D()
-            center.position = Point2D(x=float(object_x), y=float(object_y))
-            center.theta = 0.0  # Assuming theta is not used for 2D detection
-            object_bbox = BoundingBox2D(center=center, size_x=10.0, size_y=10.0)
-            detection = Detection2D(bbox=object_bbox)
-
-            # Fill object_score in results
-            hypothesis_object = ObjectHypothesisWithPose()
-            hypothesis_object.hypothesis = ObjectHypothesis()
-            hypothesis_object.hypothesis.score = float(object_score)
-            hypothesis_object.hypothesis.class_id = "object"
-            detection.results.append(hypothesis_object)
-
-            detection_array_msg.detections.append(detection)
-            self.detection_pub.publish(detection_array_msg)  # Publish the message
-
-
-    def print_time(self):
+    def print_time(self) -> None:
         self.print_time_counter += 1
         if self.print_time_counter % 10 == 0:
             now = datetime.now()
             current_time = now.strftime("%H:%M:%S")
             elapsed = now - self.start_time
-            elapsed_str = str(elapsed).split('.')[0]  # Format as H:M:S
+            elapsed_str = str(elapsed).split(".")[0]
             self.get_logger().info(f"Current Time: {current_time} | Elapsed: {elapsed_str}")
-            
-
-    def print_gesture(self, gesture_type, gesture_score):
-        if gesture_type > 0 and gesture_score > 0:
-            gesture_str = self.gesture_names_long.get(gesture_type, "Unknown")
-            self.get_logger().info(f"Gesture: {gesture_str}, Score: {gesture_score}")
-        
 
     def destroy_node(self):
-        self.loop_timer.cancel()  # Cancel the loop timer
-        #gfd.destroy()
+        self.loop_timer.cancel()
+        self.setup_timer.cancel()
+        try:
+            if self.sock is not None:
+                self.sock.close()
+        except Exception:
+            pass
         super().destroy_node()
 
 
@@ -191,18 +241,14 @@ def main(args=None):
     rclpy.init(args=args)
     node = ImageInferenceNode()
     try:
-        rclpy.spin(node)  # Keep the node alive and processing callbacks
+        rclpy.spin(node)
     except KeyboardInterrupt:
-        # can't log here, rclpy is already shutting down
-        pass  # Handle keyboard interrupt gracefully
-    #except Exception:
-    #     traceback.print_exc()
+        pass
     finally:
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
-
