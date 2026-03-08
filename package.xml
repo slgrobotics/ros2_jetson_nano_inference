@@ -7,13 +7,12 @@
   <maintainer email="slg@quakemap.com">Sergei Grichine</maintainer>
   <license>MIT</license>
 
-  <depend>rclpy</depend>
-  <depend>setuptools</depend>
-  
-  <exec_depend>vision_msgs</exec_depend>
-  <exec_depend>geometry_msgs</exec_depend>
-
   <buildtool_depend>ament_python</buildtool_depend>
+
+  <depend>rclpy</depend>
+  <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>vision_msgs</depend>
 
   <export>
     <build_type>ament_python</build_type>

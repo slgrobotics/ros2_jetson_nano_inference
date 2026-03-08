@@ -36,7 +36,7 @@ setup(
      entry_points={
          'console_scripts': [
             f'image_inference_node = {package_name}.image_inference_node:main',
-            #f'perception_adapter = {package_name}.perception_adapter:main',
+            f'perception_adapter = {package_name}.perception_adapter:main',
          ],
      },
 )
