@@ -157,7 +157,7 @@ class ImageInferenceNode(Node):
 
             hypothesis = ObjectHypothesisWithPose()
             hypothesis.hypothesis = ObjectHypothesis()
-            hypothesis.hypothesis.class_id = str(d.class_id)
+            hypothesis.hypothesis.class_id = d.label  # str(d.class_id)   "label" is easier for downstream use than "class_id", and we have it available
             hypothesis.hypothesis.score = float(d.confidence)
 
             detection.results.append(hypothesis)
