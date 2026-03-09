@@ -14,6 +14,50 @@ The inference server running on the Nano is called from a ROS2 node running on a
 
 See this [AI Chat](https://chatgpt.com/s/t_69ab6eac6b0081919c64ed4045987d0f) for general architecture.
 
+### Prerequisites
+
+You need a Jetson Nano (or another machine), running [Inference TCP/IP Server](https://github.com/slgrobotics/jetson_nano_b01/blob/main/README.md#inference-tcpip-server).
+Note that machine's TCP/IP (IPV4) address.
+
+### Build instructions:
+
+You need a camera grabber or other publisher of `/camera/image_raw/compressed` topic.
+
+```
+sudo apt install flite aplay    # optional: install text-to speech and sound player
+
+mkdir -p ~/grabber_ws/src
+cd ~/grabber_ws/src/
+git clone https://github.com/slgrobotics/ros2_jetson_nano_inference.git
+git clone https://github.com/slgrobotics/camera_publisher.git   # works with webcams
+
+# edit `~/grabber_ws/src/ros2_jetson_nano_inference/launch/ros2_image_inference.launch.py`
+#       - point 'server_host' to your Jetson Nano, running Inference TCP/IP Server
+
+cd ~/grabber_ws
+colcon build
+```
+
+Run camera grabber in the first terminal:
+```
+source cd ~/grabber_ws/install/setup.bash
+ros2 run cv_basics img_publisher
+```
+
+Launch the two nodes in the second terminal:
+```
+source cd ~/grabber_ws/install/setup.bash
+ros2 launch ros2_image_inference ros2_image_inference.launch.py
+```
+
+Use RQT and RViz2 to observe the published messages:
+- `/camera/image_raw`  - can be viewed in RViz2
+- `/camera/image_raw/compressed`  - passed to "image_inference_node"
+- `/image_inference_detections` - passed to "perception_adapter" node
+- `/fgs/face_detected`, `/fgs/face_yaw_error` and `/fgs/gesture_command` - can be consumed by Behavior Trees custom plugins
+
+See https://github.com/slgrobotics/slg_bt_plugins for more information.
+
 -------------------------
 
 Back to [Main Project Home](https://github.com/slgrobotics/articubot_one/wiki)
