@@ -26,6 +26,8 @@ def generate_launch_description():
             'image_topic': '/camera/image_raw/compressed',
             'frame_id_out': 'camera',
             'min_confidence': 0.6,    # do not publish if below this confidence threshold
+            'objects_allowed': ['person', 'cup', 'dog', 'cat'], # Case sensitive. Empty list means allow all detected objects
+            'stats_period_sec': 5.0,
         }]
         # parameters=[params_file]  # Load params from YAML instead
     )

@@ -7,6 +7,7 @@ from typing import Optional
 
 import rclpy
 from rclpy.node import Node
+from rclpy.parameter import Parameter
 
 from std_msgs.msg import Header
 from sensor_msgs.msg import CompressedImage
@@ -34,6 +35,8 @@ class ImageInferenceNode(Node):
         self.declare_parameter("image_topic", "/camera/image_raw/compressed")
         self.declare_parameter("frame_id_out", "camera")
         self.declare_parameter("min_confidence", 0.6)
+        self.declare_parameter("objects_allowed", Parameter.Type.STRING_ARRAY)
+        self.declare_parameter("stats_period_sec", 5.0)
 
         self.ticker_interval_sec = self.get_parameter("ticker_interval_sec").value
         self.server_host = self.get_parameter("server_host").value
@@ -42,8 +45,17 @@ class ImageInferenceNode(Node):
         self.image_topic = self.get_parameter("image_topic").value
         self.frame_id_out = self.get_parameter("frame_id_out").value
         self.min_confidence = self.get_parameter("min_confidence").value
+        self.objects_allowed = { s.strip() for s in self.get_parameter("objects_allowed").value if s.strip() }
+        self.stats_period_sec = self.get_parameter("stats_period_sec").value
 
         self.get_logger().info("Image Inference node started")
+
+        if self.objects_allowed:
+            self.get_logger().info(
+                f"Allowed to detect: {sorted(self.objects_allowed)}"
+            )
+        else:
+            self.get_logger().info("No 'objects_allowed' set; allowing all detected objects")
 
         self.detection_pub = self.create_publisher(
             Detection2DArray, "image_inference_detections", 10
@@ -68,8 +80,11 @@ class ImageInferenceNode(Node):
         self.latest_image_seq = 0
         self.last_sent_seq = -1
 
-        self.print_time_counter = 0
         self.start_time = datetime.now()
+        self.stats_window_start = time.monotonic()
+        self.stats_last_print = self.stats_window_start
+        self.server_calls_in_window = 0
+        self.total_server_calls = 0
 
     def image_callback(self, msg: CompressedImage) -> None:
         # Keep latest only
@@ -132,7 +147,7 @@ class ImageInferenceNode(Node):
 
         self.setup_timer.cancel()
 
-    def build_detection_array_msg(self, result: InferenceResult) -> Detection2DArray:
+    def build_detection_array_msg(self, result: InferenceResult) -> Optional[Detection2DArray]:
         msg = Detection2DArray()
 
         header = Header()
@@ -146,11 +161,14 @@ class ImageInferenceNode(Node):
             if confidence < self.min_confidence:
                 continue
 
+            if self.objects_allowed and d.label not in self.objects_allowed:
+                continue
+
             x1, y1, x2, y2 = d.bbox_xyxy
             cx, cy, w, h = d.bbox_xywh
 
             self.get_logger().info(
-                f"Detection: label={d.label}, confidence={confidence:.3f}, "
+                f"Publishing detection: label={d.label}, confidence={confidence:.3f}, "
                 f"bbox_xyxy=({x1:.0f}, {y1:.0f}, {x2:.0f}, {y2:.0f}), "
                 f"bbox_xywh=({cx:.0f}, {cy:.0f}, {w:.0f}, {h:.0f})"
             )
@@ -203,6 +221,8 @@ class ImageInferenceNode(Node):
             sock_response = self.recv_response(self.sock)
             result = parse_inference_response(json.dumps(sock_response))
             self.last_sent_seq = frame_seq
+            self.server_calls_in_window += 1
+            self.total_server_calls += 1
         except Exception as e:
             self.get_logger().error(f"Inference request failed: {e}")
             self.server_ready = False
@@ -219,18 +239,20 @@ class ImageInferenceNode(Node):
                 self.get_logger().error(f"Reconnect failed: {reconnect_error}")
             return
 
-        self.print_time()
+        self.print_stats()
 
         self.get_logger().debug(
             f"frame_id={result.frame_id} infer_ms={result.infer_ms:.1f} "
             f"queue_delay_ms={result.queue_delay_ms:.1f} detections={len(result.detections)}"
         )
 
+        """
         for d in result.detections:
             self.get_logger().info(
-                f"Detection: label={d.label}, class_id={d.class_id}, "
+                f"Server detected: label={d.label}, class_id={d.class_id}, "
                 f"confidence={d.confidence:.3f}, bbox={d.bbox_xyxy}"
             )
+        """
 
         detection_array_msg = self.build_detection_array_msg(result)
 
@@ -238,14 +260,31 @@ class ImageInferenceNode(Node):
             # Only publish if there are detections above confidence threshold
             self.detection_pub.publish(detection_array_msg)
 
-    def print_time(self) -> None:
-        self.print_time_counter += 1
-        if self.print_time_counter % 10 == 0:
-            now = datetime.now()
-            current_time = now.strftime("%H:%M:%S")
-            elapsed = now - self.start_time
-            elapsed_str = str(elapsed).split(".")[0]
-            self.get_logger().info(f"Current Time: {current_time} | Elapsed: {elapsed_str}")
+    def print_stats(self) -> None:
+        now_monotonic = time.monotonic()
+        elapsed_window = now_monotonic - self.stats_window_start
+
+        if elapsed_window < self.stats_period_sec:
+            return
+
+        server_calls_per_second = self.server_calls_in_window / elapsed_window if elapsed_window > 0.0 else 0.0
+
+        now_dt = datetime.now()
+        current_time = now_dt.strftime("%H:%M:%S")
+        elapsed_total = now_dt - self.start_time
+        elapsed_total_str = str(elapsed_total).split(".")[0]
+
+        self.get_logger().info(
+            f"Current Time: {current_time} | "
+            f"Elapsed: {elapsed_total_str} | "
+            f"Total calls: {self.total_server_calls} | "
+            f"Calls: {self.server_calls_in_window} in {elapsed_window:.1f}s | "
+            f"Server calls per second: {server_calls_per_second:.2f}"
+        )
+
+        self.stats_window_start = now_monotonic
+        self.server_calls_in_window = 0
+
 
     def destroy_node(self):
         self.loop_timer.cancel()

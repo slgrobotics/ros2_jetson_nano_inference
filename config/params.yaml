@@ -10,6 +10,9 @@ image_inference_node:
     image_topic: '/camera/image_raw/compressed'
     frame_id_out: "camera"
     min_confidence: 0.6    # do not publish if below this confidence threshold
+    objects_allowed: ['person', 'cup', 'dog', 'cat']  # Case sensitive. Empty list means allow all detected objects
+    stats_period_sec: 5.0
+
 
 # Perception adapter (BT topics relay) configuration
 perception_adapter:
