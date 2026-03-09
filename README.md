@@ -28,7 +28,9 @@ Make sure that the server responds, using Python scripts in the "test" directory
 
 ### Build instructions:
 
-You need a camera grabber or other publisher of `/camera/image_raw/compressed` topic.
+On a development machine:
+- You need a [camera publisher](https://github.com/slgrobotics/camera_publisher) or other publisher of `/camera/image_raw/compressed` topic.
+- We also add "[detection_visualizer](https://github.com/ros2/detection_visualizer)" package to see bounding boxes overlaid over the image.
 
 ```
 sudo apt install flite aplay    # optional: install text-to speech and sound player
@@ -37,6 +39,7 @@ mkdir -p ~/grabber_ws/src
 cd ~/grabber_ws/src/
 git clone https://github.com/slgrobotics/ros2_jetson_nano_inference.git
 git clone https://github.com/slgrobotics/camera_publisher.git   # works with webcams
+git clone https://github.com/ros2/detection_visualizer.git
 
 # edit `~/grabber_ws/src/ros2_jetson_nano_inference/launch/ros2_image_inference.launch.py`
 #       - point 'server_host' to your Jetson Nano, running Inference TCP/IP Server
@@ -45,13 +48,13 @@ cd ~/grabber_ws
 colcon build
 ```
 
-Run camera grabber in the first terminal:
+Run camera publisher in the first terminal:
 ```
 source cd ~/grabber_ws/install/setup.bash
 ros2 run cv_basics img_publisher
 ```
 
-Launch the two nodes in the second terminal:
+Launch the two nodes and visualizer in the second terminal:
 ```
 source cd ~/grabber_ws/install/setup.bash
 ros2 launch ros2_image_inference ros2_image_inference.launch.py
@@ -62,6 +65,11 @@ Use RQT and RViz2 to observe the published messages:
 - `/camera/image_raw/compressed`  - passed to "image_inference_node"
 - `/image_inference_detections` - passed to "perception_adapter" node
 - `/fgs/face_detected`, `/fgs/face_yaw_error` and `/fgs/gesture_command` - can be consumed by Behavior Trees custom plugins
+
+You can open RQT or RViz2 to see the recognized objects and bounding boxes:
+
+(**RQT:** *Plugins->Visualization->Image View*;  topic: `/image_inference_overlay`)
+<img width="990" height="747" alt="Screenshot from 2026-03-09 14-33-39" src="https://github.com/user-attachments/assets/b19ab059-5110-43fe-9cd6-af06b75662dd" />
 
 See https://github.com/slgrobotics/slg_bt_plugins for more information.
 
