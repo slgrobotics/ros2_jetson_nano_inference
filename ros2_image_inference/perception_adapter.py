@@ -239,17 +239,22 @@ class PerceptionAdapter(Node):
         self._say_something(spoken)
 
 
+    def destroy_node(self):
+        self.ticker_timer.cancel()
+        super().destroy_node()
+
+
 def main(args=None):
     rclpy.init(args=args)
     node = PerceptionAdapter()
-
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":
