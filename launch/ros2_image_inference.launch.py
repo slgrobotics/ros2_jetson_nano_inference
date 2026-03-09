@@ -24,7 +24,8 @@ def generate_launch_description():
             'server_port': 5001,
             'startup_delay_sec': 5.0,
             'image_topic': '/camera/image_raw/compressed',
-            'frame_id_out': 'camera'
+            'frame_id_out': 'camera',
+            'min_confidence': 0.6,
         }]
         # parameters=[params_file]  # Load params from YAML instead
     )
@@ -43,7 +44,7 @@ def generate_launch_description():
             'min_confidence': 0.6,
             'face_cooldown_sec': 2.0,
             'camera_center_x': 320.0,
-            'target_label': 'person'
+            'target_label': 'person',
         }]
         # parameters=[params_file]
     )

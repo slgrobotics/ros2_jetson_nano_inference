@@ -33,6 +33,7 @@ class ImageInferenceNode(Node):
         self.declare_parameter("startup_delay_sec", 5.0)
         self.declare_parameter("image_topic", "/camera/image_raw/compressed")
         self.declare_parameter("frame_id_out", "camera")
+        self.declare_parameter("min_confidence", 0.6)
 
         self.ticker_interval_sec = self.get_parameter("ticker_interval_sec").value
         self.server_host = self.get_parameter("server_host").value
@@ -40,6 +41,7 @@ class ImageInferenceNode(Node):
         self.startup_delay_sec = self.get_parameter("startup_delay_sec").value
         self.image_topic = self.get_parameter("image_topic").value
         self.frame_id_out = self.get_parameter("frame_id_out").value
+        self.min_confidence = self.get_parameter("min_confidence").value
 
         self.get_logger().info("Image Inference node started")
 
@@ -136,11 +138,22 @@ class ImageInferenceNode(Node):
         header = Header()
         header.stamp = self.get_clock().now().to_msg()
         header.frame_id = self.latest_source_frame_id or self.frame_id_out
-        msg.header = header
 
         for d in result.detections:
+
+            confidence = d.confidence
+
+            if confidence < self.min_confidence:
+                continue
+
             x1, y1, x2, y2 = d.bbox_xyxy
             cx, cy, w, h = d.bbox_xywh
+
+            self.get_logger().info(
+                f"Detection: label={d.label}, confidence={confidence:.3f}, "
+                f"bbox_xyxy=({x1:.0f}, {y1:.0f}, {x2:.0f}, {y2:.0f}), "
+                f"bbox_xywh=({cx:.0f}, {cy:.0f}, {w:.0f}, {h:.0f})"
+            )
 
             detection = Detection2D()
             detection.header = header
@@ -163,6 +176,11 @@ class ImageInferenceNode(Node):
             detection.results.append(hypothesis)
 
             msg.detections.append(detection)
+
+        if len(msg.detections) == 0:
+            return None  # no detections above confidence threshold, return None to indicate empty result
+
+        msg.header = header
 
         return msg
 
@@ -215,7 +233,10 @@ class ImageInferenceNode(Node):
             )
 
         detection_array_msg = self.build_detection_array_msg(result)
-        self.detection_pub.publish(detection_array_msg)
+
+        if detection_array_msg is not None:
+            # Only publish if there are detections above confidence threshold
+            self.detection_pub.publish(detection_array_msg)
 
     def print_time(self) -> None:
         self.print_time_counter += 1
