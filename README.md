@@ -71,6 +71,18 @@ You can open RQT or RViz2 to see the recognized objects and bounding boxes:
 (**RQT:** *Plugins->Visualization->Image View*;  topic: `/image_inference_overlay`)
 <img width="990" height="747" alt="Screenshot from 2026-03-09 14-33-39" src="https://github.com/user-attachments/assets/b19ab059-5110-43fe-9cd6-af06b75662dd" />
 
+The *image_inference_node* will print statistics, with objects in view server is called ~6 times per second, a blank image is processed at the rate of ~9+ per second:
+```
+[image_inference_node]: Current Time: 15:28:37 | Elapsed: 0:00:30 | Total calls: 161 | Calls: 33 in 5.2s | Server calls per second: 6.39
+[image_inference_node]: Publishing detection: label=person, confidence=0.930, bbox_xyxy=(100, 146, 552, 474), bbox_xywh=(326, 310, 452, 328)
+...
+[image_inference_node]: Publishing detection: label=person, confidence=0.884, bbox_xyxy=(8, 289, 638, 473), bbox_xywh=(323, 381, 630, 185)
+[perception_adapter-2] [INFO] [1773088122.395230070] [perception_adapter]: Target disappeared, resetting state to idle
+[image_inference_node]: Current Time: 15:28:42 | Elapsed: 0:00:35 | Total calls: 195 | Calls: 34 in 5.1s | Server calls per second: 6.62
+[image_inference_node]: Current Time: 15:28:47 | Elapsed: 0:00:40 | Total calls: 241 | Calls: 46 in 5.1s | Server calls per second: 9.08
+[image_inference_node]: Current Time: 15:28:52 | Elapsed: 0:00:45 | Total calls: 290 | Calls: 49 in 5.1s | Server calls per second: 9.67
+```
+
 See https://github.com/slgrobotics/slg_bt_plugins for more information.
 
 -------------------------
