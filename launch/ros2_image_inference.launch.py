@@ -49,7 +49,20 @@ def generate_launch_description():
         # parameters=[params_file]  # Load params from YAML instead
     )
 
+    visualization_node = Node(
+        package='detection_visualizer',
+        executable='detection_visualizer',
+        name='detection_visualizer',
+        output='screen',
+        remappings=[
+            ('~/images', '/camera/image_raw'),
+            ('~/detections', '/image_inference_detections'),
+            ('~/dbg_images', '/image_inference_overlay'),
+        ]
+    )
+
     return LaunchDescription([
         image_inference_node,
-        perception_adapter_node
+        perception_adapter_node,
+        visualization_node,
     ])
