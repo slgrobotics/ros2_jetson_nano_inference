@@ -19,6 +19,13 @@ See this [AI Chat](https://chatgpt.com/s/t_69ab6eac6b0081919c64ed4045987d0f) for
 You need a Jetson Nano (or another machine), running [Inference TCP/IP Server](https://github.com/slgrobotics/jetson_nano_b01/blob/main/README.md#inference-tcpip-server).
 Note that machine's TCP/IP (IPV4) address.
 
+I run the server with the following command (in the container; assuming that you've already built the `yolo11n.engine`):
+```
+root@jetson:/code/src/dt-duckpack-yolo/shared/src# python3 yolo_tcp_server.py --model yolo11n.engine --imgsz 480 --warmup 3 --host 0.0.0.0 --port 5001
+```
+
+Make sure that the server responds, using Python scripts in the "test" directory.
+
 ### Build instructions:
 
 You need a camera grabber or other publisher of `/camera/image_raw/compressed` topic.
