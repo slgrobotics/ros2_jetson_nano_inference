@@ -9,6 +9,7 @@ image_inference_node:
     startup_delay_sec: 5.0
     image_topic: '/camera/image_raw/compressed'
     frame_id_out: "camera"
+    min_confidence: 0.6    # do not publish if below this confidence threshold
 
 # Perception adapter (BT topics relay) configuration
 perception_adapter:

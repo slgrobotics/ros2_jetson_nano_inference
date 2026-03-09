@@ -25,7 +25,7 @@ def generate_launch_description():
             'startup_delay_sec': 5.0,
             'image_topic': '/camera/image_raw/compressed',
             'frame_id_out': 'camera',
-            'min_confidence': 0.6,
+            'min_confidence': 0.6,    # do not publish if below this confidence threshold
         }]
         # parameters=[params_file]  # Load params from YAML instead
     )
@@ -46,7 +46,7 @@ def generate_launch_description():
             'camera_center_x': 320.0,
             'target_label': 'person',
         }]
-        # parameters=[params_file]
+        # parameters=[params_file]  # Load params from YAML instead
     )
 
     return LaunchDescription([
