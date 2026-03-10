@@ -10,7 +10,7 @@ from rclpy.node import Node
 from rclpy.parameter import Parameter
 
 from std_msgs.msg import Header
-from sensor_msgs.msg import CompressedImage
+from sensor_msgs.msg import Image, CompressedImage
 from vision_msgs.msg import (
     Point2D,
     Pose2D,
@@ -37,6 +37,7 @@ class ImageInferenceNode(Node):
         self.declare_parameter("min_confidence", 0.6)
         self.declare_parameter("objects_allowed", Parameter.Type.STRING_ARRAY)
         self.declare_parameter("stats_period_sec", 5.0)
+        self.declare_parameter("use_server_cam", False)  # do not send images from ROS, the server's camera feeds ingerence engine directly
 
         self.ticker_interval_sec = self.get_parameter("ticker_interval_sec").value
         self.server_host = self.get_parameter("server_host").value
@@ -47,6 +48,7 @@ class ImageInferenceNode(Node):
         self.min_confidence = self.get_parameter("min_confidence").value
         self.objects_allowed = { s.strip() for s in self.get_parameter("objects_allowed").value if s.strip() }
         self.stats_period_sec = self.get_parameter("stats_period_sec").value
+        self.use_server_cam = self.get_parameter("use_server_cam").value
 
         self.get_logger().info("Image Inference node started")
 
@@ -61,12 +63,18 @@ class ImageInferenceNode(Node):
             Detection2DArray, "image_inference_detections", 10
         )
 
-        self.image_sub = self.create_subscription(
-            CompressedImage,
-            self.image_topic,
-            self.image_callback,
-            10,
-        )
+        if self.use_server_cam:
+            server_cam_image = "server_cam_image"
+            self.get_logger().info(f"Using server camera feed directly for inference, publishing '{server_cam_image}' topic for visualization")
+            self.image_pub = self.create_publisher(Image, "server_cam_image", 10)
+        else:
+            self.get_logger().info(f"Subscribing to ROS CompressedImage topic '{self.image_topic}' for inference")
+            self.image_sub = self.create_subscription(
+                CompressedImage,
+                self.image_topic,
+                self.image_callback,
+                10,
+            )
 
         self.setup_timer = self.create_timer(self.startup_delay_sec, self.setup)
         self.loop_timer = self.create_timer(self.ticker_interval_sec, self.loop_callback)
@@ -87,6 +95,7 @@ class ImageInferenceNode(Node):
         self.total_server_calls = 0
 
     def image_callback(self, msg: CompressedImage) -> None:
+        # Only used when "use_server_cam" is False
         # Keep latest only
         self.latest_jpg = bytes(msg.data)
         self.latest_image_stamp = msg.header.stamp
@@ -114,11 +123,17 @@ class ImageInferenceNode(Node):
         hdr = json.dumps(header).encode("utf-8")
         sock.sendall(struct.pack(">I", len(hdr)))
         sock.sendall(hdr)
-        sock.sendall(jpg_bytes)
+        if not self.use_server_cam:
+            # when server is using its own camera feed directly, we don't send images from ROS at all, so skip sending empty payload
+            sock.sendall(jpg_bytes)
 
     def recv_response(self, sock: socket.socket) -> dict:
         n = struct.unpack(">I", self.recv_exact(sock, 4))[0]
         data = self.recv_exact(sock, n)
+        if self.use_server_cam:
+            # Expect a JPEG image response from the server camera feed,
+            # publish it for visualization and inference result
+            pass
         return json.loads(data.decode("utf-8"))
 
     def connect_server(self) -> None:
