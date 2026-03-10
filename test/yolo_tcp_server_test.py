@@ -6,7 +6,15 @@ This is just for validating yolo_tcp_server.py from:
  - another machine or 
  - from inside the Nano container.
 
+Server code: https://github.com/slgrobotics/jetson_nano_b01/blob/main/src/yolo_tcp_server.py
+
 See https://chatgpt.com/s/t_69ab72e92950819191c249c64f5adc5b
+
+Usage:
+ - Make sure yolo_tcp_server.py is running on the Jetson Nano (in the container).
+ - Update SERVER_HOST to the correct IP address of the Jetson Nano (not the container).
+ - Run this script on another machine that can reach the Jetson Nano over the network, or inside the container.
+ - expected output is the JSON response from the server with inference results for the provided "duckies" image.
 
 """
 
@@ -22,6 +30,9 @@ SERVER_PORT = 5001
 IMAGE_PATH = "../media/duckies_2_480x480.jpg"
 
 def recv_exact(sock, n):
+    """
+    @brief Receive exactly n bytes from the socket. This handles cases where recv() may return less than n bytes.
+    """
     chunks = []
     remaining = n
     while remaining > 0:
@@ -33,6 +44,9 @@ def recv_exact(sock, n):
     return b"".join(chunks)
 
 def send_request(sock, frame_id, jpg_bytes):
+    """
+    @brief Send a single inference request to the server with the given frame ID and JPEG bytes.
+    """
     header = {
         "frame_id": frame_id,
         "timestamp_ns": time.time_ns(),
@@ -45,6 +59,9 @@ def send_request(sock, frame_id, jpg_bytes):
     sock.sendall(jpg_bytes)
 
 def recv_response(sock):
+    """
+    @brief Receive a single inference response from the server and return it as a Python dictionary.
+    """
     n = struct.unpack(">I", recv_exact(sock, 4))[0]
     data = recv_exact(sock, n)
     return json.loads(data.decode("utf-8"))
