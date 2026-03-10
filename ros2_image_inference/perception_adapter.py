@@ -176,6 +176,9 @@ class PerceptionAdapter(Node):
             self._handle_face(best_target_x)
 
     def _ticker_callback(self):
+        """
+        Periodic check: If face not detected for face_cooldown_sec, reset to idle.
+        """
         now = time.time()
         if self.state == "tracking" and (now - self.last_face_time) > self.face_cooldown:
             self.get_logger().info("Target disappeared, resetting state to idle")
@@ -184,6 +187,9 @@ class PerceptionAdapter(Node):
 
     # --------------------------------------------------
     # Semantic handlers
+    #
+    # Each handler processes a specific gesture or face detection event.
+    # They abstract away low-level details and publish high-level intent messages.
     # --------------------------------------------------
 
     def _handle_face(self, face_x: float):
@@ -247,6 +253,7 @@ class PerceptionAdapter(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = PerceptionAdapter()
+
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
