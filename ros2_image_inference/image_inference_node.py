@@ -72,10 +72,14 @@ class ImageInferenceNode(Node):
             - client publishes the returned image on server_cam_image
             - client publishes Detection2DArray
 
-        On the server side:
-            This client code assumes the server response really is:
-            - JSON only   when "use_server_cam" omitted (default)
-            - JSON + JPEG when "use_server_cam" present
+        All server responses begin with JSON.
+            The JSON always includes:
+            - "ok": bool
+            - "has_jpeg": bool
+
+            If "has_jpeg" is true, the JSON is followed by:
+            - 4-byte JPEG length
+            - JPEG bytes            
 
         Note: the client and server must be configured consistently.            
         """
@@ -167,23 +171,27 @@ class ImageInferenceNode(Node):
     def recv_response(self, sock: socket.socket) -> dict:
         n = struct.unpack(">I", self.recv_exact(sock, 4))[0]
         data = self.recv_exact(sock, n)
-        response = json.loads(data.decode("utf-8"))
+        response_dict = json.loads(data.decode("utf-8"))
 
-        if self.use_server_cam:
+        has_jpeg = bool(response_dict.get("has_jpeg", False))
+
+        if has_jpeg:
             jpeg_len = struct.unpack(">I", self.recv_exact(sock, 4))[0]
             jpeg_bytes = self.recv_exact(sock, jpeg_len)
 
-            # Publish returned server camera frame for visualization
-            np_buf = np.frombuffer(jpeg_bytes, dtype=np.uint8)
-            frame = cv2.imdecode(np_buf, cv2.IMREAD_COLOR)
+            # Only publish returned JPEG when using server camera mode
+            if self.use_server_cam:
+                np_buf = np.frombuffer(jpeg_bytes, dtype=np.uint8)
+                frame = cv2.imdecode(np_buf, cv2.IMREAD_COLOR)
 
-            if frame is not None:
-                msg = self.br.cv2_to_imgmsg(frame, encoding="bgr8")
-                msg.header.stamp = self.get_clock().now().to_msg()
-                msg.header.frame_id = self.frame_id_out
-                self.image_pub.publish(msg)
+                if frame is not None:
+                    msg = self.br.cv2_to_imgmsg(frame, encoding="bgr8")
+                    msg.header.stamp = self.get_clock().now().to_msg()
+                    msg.header.frame_id = self.frame_id_out
+                    self.image_pub.publish(msg)
 
-        return response
+        return response_dict
+
 
     def connect_server(self) -> None:
         if self.sock is not None:
@@ -288,10 +296,18 @@ class ImageInferenceNode(Node):
         try:
             self.send_request(self.sock, frame_seq, jpg)
             sock_response = self.recv_response(self.sock)
-            result = parse_inference_response(json.dumps(sock_response))
             self.last_sent_seq = frame_seq
             self.server_calls_in_window += 1
             self.total_server_calls += 1
+
+            if not sock_response.get("ok", False):
+                error_text = sock_response.get("error", "unknown_server_error")
+                self.get_logger().warning(f"Server returned error: {error_text}")
+                self.last_sent_seq = frame_seq
+                return
+
+            result = parse_inference_response(json.dumps(sock_response))
+
         except Exception as e:
             self.get_logger().error(f"Inference request failed: {e}")
             self.server_ready = False
