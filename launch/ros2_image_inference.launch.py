@@ -28,6 +28,7 @@ def generate_launch_description():
             'objects_allowed': ['person', 'cup', 'dog', 'cat'], # Case sensitive. Empty list means allow all detected objects
             'stats_period_sec': 5.0,
             #"use_server_cam": True,  # Default: false. If True - do not send images from ROS, the server's camera feeds inference engine directly
+            "verbose": True,        # If true - print debug info about sent requests and received responses, recognized classes.
         }]
         # parameters=[params_file]  # Load params from YAML instead
     )
@@ -49,6 +50,7 @@ def generate_launch_description():
             'target_label': 'person',  # The "face detected" logic is applied only to this object class.
             # Optional JSON string mapping object labels to "gestures". If not set, capitalized label will be used:
             'label_map_json': '{"cup":"STOP", "giraffe":"LIKE", "cat":"MEOW", "dog":"WOOF", "chair":"OK"}',
+            "verbose": True,        # If true - print debug info about recognized and passed detections.
         }]
         # parameters=[params_file]  # Load params from YAML instead
     )

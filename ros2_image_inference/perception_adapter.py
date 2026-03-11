@@ -44,6 +44,7 @@ class PerceptionAdapter(Node):
         super().__init__("perception_adapter")
 
         # ---- parameters ----
+        self.declare_parameter("verbose", False)
         self.declare_parameter("ticker_interval_sec", 0.1)
         self.declare_parameter("detection_topic", "/image_inference_detections")
         self.declare_parameter("face_detected_sound", "")
@@ -78,6 +79,7 @@ class PerceptionAdapter(Node):
         # Suppress repeating the same command too frequently
         self.declare_parameter("gesture_cooldown_sec", 1.0)
 
+        self.verbose = self.get_parameter("verbose").value
         self.detection_topic = str(self.get_parameter("detection_topic").value)
         self.face_detected_sound = str(self.get_parameter("face_detected_sound").value)
         self.face_detected_text = str(self.get_parameter("face_detected_text").value)
@@ -169,6 +171,8 @@ class PerceptionAdapter(Node):
 
     def _say_something(self, text: str):
         if text and self.last_said != text:
+            if self.verbose:
+                self.get_logger().info(f'Saying: "{text}"')
             subprocess.Popen(["flite", "-t", text])
             self.last_said = text
 
@@ -181,12 +185,19 @@ class PerceptionAdapter(Node):
         combo_msg.header.frame_id = gesture
         combo_msg.illuminance = 1.0 if face_detected else 0.0
         combo_msg.variance = float(angle_error)
+        if self.verbose:
+            self.get_logger().info(
+                f"Publishing to BT: face_detected={face_detected}, gesture='{gesture}', "
+                f"angle_error={angle_error:.3f} radians ({angle_error * 180 / pi:.1f} deg)"
+            )
         self.face_gesture_detected_pub.publish(combo_msg)
 
     def _publish_target_lost(self):
         self.face_detected_pub.publish(Bool(data=False))
         self.face_yaw_err_pub.publish(Float32(data=0.0))
         bt_gesture = self.last_gesture if (time.time() - self.last_gesture_time) < 1.0 else ""
+        if self.verbose:
+            self.get_logger().info('Publishing "target lost" message to BT')
         self._pub_to_bt(face_detected=False, gesture=bt_gesture, angle_error=0.0)
 
     def _pick_best_gesture_label(
@@ -259,7 +270,7 @@ class PerceptionAdapter(Node):
         winning_label = self._pick_best_gesture_label(detected_non_target_labels)
         if winning_label is not None:
             gesture = self._map_label_to_gesture(winning_label)
-            self._handle_gesture(gesture)
+            self._handle_gesture(raw_label, gesture)
 
         if best_target_x is not None:
             self._handle_face(best_target_x)
@@ -311,7 +322,7 @@ class PerceptionAdapter(Node):
                 f"distance_px={distance_px:.1f}, angle_error={angle_error:.3f}"
             )
 
-    def _handle_gesture(self, gesture: str):
+    def _handle_gesture(self, label: str, gesture: str):
         gesture = gesture.upper()
         now = time.time()
 
@@ -321,7 +332,9 @@ class PerceptionAdapter(Node):
         self.last_gesture = gesture
         self.last_gesture_time = now
 
-        self.get_logger().info(f"Gesture/command: {gesture}")
+        if self.verbose:
+            self.get_logger().info(f'Label: "{label}"  -->  Gesture/command: "{gesture}"')
+
         self.gesture_pub.publish(String(data=gesture))
 
         spoken = self._spoken_text_for_gesture(gesture)

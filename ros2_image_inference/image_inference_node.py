@@ -46,6 +46,7 @@ class ImageInferenceNode(Node):
         self.declare_parameter("objects_allowed", Parameter.Type.STRING_ARRAY)
         self.declare_parameter("stats_period_sec", 5.0)
         self.declare_parameter("use_server_cam", False)  # do not send images from ROS, the server's camera feeds inference engine directly
+        self.declare_parameter("verbose", False)
 
         self.ticker_interval_sec = self.get_parameter("ticker_interval_sec").value
         self.server_host = self.get_parameter("server_host").value
@@ -57,6 +58,7 @@ class ImageInferenceNode(Node):
         self.objects_allowed = { s.strip() for s in self.get_parameter("objects_allowed").value if s.strip() }
         self.stats_period_sec = self.get_parameter("stats_period_sec").value
         self.use_server_cam = self.get_parameter("use_server_cam").value
+        self.verbose = self.get_parameter("verbose").value
 
         """
         With "use_server_cam"=False: (default)
@@ -239,11 +241,12 @@ class ImageInferenceNode(Node):
             x1, y1, x2, y2 = d.bbox_xyxy
             cx, cy, w, h = d.bbox_xywh
 
-            self.get_logger().info(
-                f"Publishing detection: label={d.label}, confidence={confidence:.3f}, "
-                f"bbox_xyxy=({x1:.0f}, {y1:.0f}, {x2:.0f}, {y2:.0f}), "
-                f"bbox_xywh=({cx:.0f}, {cy:.0f}, {w:.0f}, {h:.0f})"
-            )
+            if self.verbose:
+                self.get_logger().info(
+                    f"Publishing detection: label={d.label}, confidence={confidence:.3f}, "
+                    f"bbox_xyxy=({x1:.0f}, {y1:.0f}, {x2:.0f}, {y2:.0f}), "
+                    f"bbox_xywh=({cx:.0f}, {cy:.0f}, {w:.0f}, {h:.0f})"
+                )
 
             detection = Detection2D()
             detection.header = header
