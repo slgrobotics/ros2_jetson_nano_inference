@@ -98,7 +98,7 @@ class ImageInferenceNode(Node):
         )
 
         if self.use_server_cam:
-            server_cam_image = "server_cam_image"  # topic to publish for visualization, uncompressed
+            server_cam_image = "camera/image_raw"  # topic to publish for visualization, uncompressed
             self.get_logger().info(f"Using server camera feed directly for inference, publishing '{server_cam_image}' topic for visualization")
             self.image_pub = self.create_publisher(Image, server_cam_image, 10)
         else:
