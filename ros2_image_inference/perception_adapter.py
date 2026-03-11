@@ -13,6 +13,10 @@ from sensor_msgs.msg import Illuminance
 from std_msgs.msg import Bool, Float32, String
 from vision_msgs.msg import Detection2DArray
 
+#
+# For the reasons of this designs see:
+#  - https://github.com/slgrobotics/articubot_one/wiki/Behavior-Tree-for-Gesture-and-Face-Detection-Sensor
+#
 
 class PerceptionAdapter(Node):
     """
@@ -51,8 +55,8 @@ class PerceptionAdapter(Node):
         # Label treated as the old "FACE" target
         self.declare_parameter("target_label", "person")
 
-        # Optional mapping for publishers that send numeric class ids as strings.
-        # Example: {"0":"person","1":"cat","2":"chair"}
+        # Optional mapping of classes to "gesture names".
+        # Example: {"cup":"STOP", "giraffe":"LIKE", "cat":"MEOW", "dog":"WOOF", "chair":"OK"}
         self.declare_parameter("label_map_json", "{}")
 
         # Ordered mapping:

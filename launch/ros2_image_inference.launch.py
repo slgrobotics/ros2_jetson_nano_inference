@@ -45,8 +45,10 @@ def generate_launch_description():
             'face_detected_text': 'I see you!',
             'min_confidence': 0.6,
             'face_cooldown_sec': 2.0,
-            'camera_center_x': 320.0,
-            'target_label': 'person',
+            'camera_center_x': 320.0,  # Assuming 640x480 input images. Adjust if different.
+            'target_label': 'person',  # The "face detected" logic is applied only to this object class.
+            # Optional JSON string mapping object labels to "gestures". If not set, capitalized label will be used:
+            'label_map_json': '{"cup":"STOP", "giraffe":"LIKE", "cat":"MEOW", "dog":"WOOF", "chair":"OK"}',
         }]
         # parameters=[params_file]  # Load params from YAML instead
     )
