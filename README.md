@@ -17,11 +17,18 @@ See this [AI Chat](https://chatgpt.com/s/t_69ab6eac6b0081919c64ed4045987d0f) for
 ### Prerequisites
 
 You need a Jetson Nano (or another machine), running [Inference TCP/IP Server](https://github.com/slgrobotics/jetson_nano_b01/blob/main/README.md#inference-tcpip-server).
-Note that machine's TCP/IP (IPV4) address.
+
+Note the Nano's TCP/IP (IPV4) address - you will need it to launch ROS2 node.
 
 I run the server with the following command (in the container; assuming that you've already built the `yolo11n.engine`):
 ```
-root@jetson:/code/src/dt-duckpack-yolo/shared/src# python3 yolo_tcp_server.py --model yolo11n.engine --imgsz 480 --warmup 3 --host 0.0.0.0 --port 5001
+root@jetson:/code/src/dt-duckpack-yolo/shared/src# python3 yolo_tcp_server.py --model yolo11n.engine \
+ --imgsz 480 --warmup 3 --host 0.0.0.0 --port 5001
+```
+Or, if using the Nano's camera:
+```
+root@jetson:/code/src/dt-duckpack-yolo/shared/src# python3 yolo_tcp_server_cam.py --model yolo11n.engine \
+ --imgsz 480 --warmup 3 --host 0.0.0.0 --port 5001 --use_server_cam
 ```
 
 Make sure that the server responds, using Python scripts in the "test" directory.
@@ -82,6 +89,18 @@ The *image_inference_node* will print statistics, with objects in view server is
 [image_inference_node]: Current Time: 15:28:47 | Elapsed: 0:00:40 | Total calls: 241 | Calls: 46 in 5.1s | Server calls per second: 9.08
 [image_inference_node]: Current Time: 15:28:52 | Elapsed: 0:00:45 | Total calls: 290 | Calls: 49 in 5.1s | Server calls per second: 9.67
 ```
+
+If using the Nano's camera (`--use_server_cam` mode enabled on both the server and the ROS2 node), the workflow is slightly different:
+
+- the node sends a small request to the server
+- the server captures a frame from the camera and runs the model
+- the server responds with a JSON detections array and the camera frame (JPEG)
+- the node decodes the frame and publishes it to `/camera/image_raw` for visualization
+- the node publishes detections to `/image_inference_detections`
+
+The image and overlays can be viewed in RQT or RViz as described above. Detections are consumed by the `perception_adapter` node and published for Behavior Tree consumption.
+
+### Behavior trees connection
 
 See https://github.com/slgrobotics/slg_bt_plugins for more information.
 
