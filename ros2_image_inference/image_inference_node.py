@@ -45,7 +45,7 @@ class ImageInferenceNode(Node):
         self.declare_parameter("min_confidence", 0.6)
         self.declare_parameter("objects_allowed", Parameter.Type.STRING_ARRAY)
         self.declare_parameter("stats_period_sec", 5.0)
-        self.declare_parameter("use_server_cam", False)  # do not send images from ROS, the server's camera feeds ingerence engine directly
+        self.declare_parameter("use_server_cam", False)  # do not send images from ROS, the server's camera feeds inference engine directly
 
         self.ticker_interval_sec = self.get_parameter("ticker_interval_sec").value
         self.server_host = self.get_parameter("server_host").value
