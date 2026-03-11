@@ -28,7 +28,7 @@ def generate_launch_description():
             'min_confidence': 0.6,    # do not publish if below this confidence threshold
             'objects_allowed': ['person', 'cup', 'dog', 'cat'], # Case sensitive. Empty list means allow all detected objects
             'stats_period_sec': 5.0,
-            "use_server_cam": False,  # do not send images from ROS, the server's camera feeds inference engine directly
+            #"use_server_cam": True,  # Default: false. If True - do not send images from ROS, the server's camera feeds inference engine directly
         }]
         # parameters=[params_file]  # Load params from YAML instead
     )
