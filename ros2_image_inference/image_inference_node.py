@@ -9,6 +9,10 @@ import rclpy
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 
+import cv2
+import numpy as np
+from cv_bridge import CvBridge
+
 from std_msgs.msg import Header
 from sensor_msgs.msg import Image, CompressedImage
 from vision_msgs.msg import (
@@ -23,6 +27,10 @@ from vision_msgs.msg import (
 
 from .inference_response_parser import parse_inference_response, InferenceResult
 
+#
+# Server code:
+#  - see https://github.com/slgrobotics/jetson_nano_b01/blob/main/src/yolo_tcp_server_cam.py
+#
 
 class ImageInferenceNode(Node):
     def __init__(self):
@@ -50,6 +58,28 @@ class ImageInferenceNode(Node):
         self.stats_period_sec = self.get_parameter("stats_period_sec").value
         self.use_server_cam = self.get_parameter("use_server_cam").value
 
+        """
+        With "use_server_cam"=False: (default)
+            - subscribe to /camera/image_raw/compressed
+            - send JPEG bytes to server
+            - receive JSON detections
+            - publish Detection2DArray
+        With "use_server_cam"=True:
+            - do not subscribe to ROS images
+            - periodically send a header-only request to the server
+            - server runs inference on its own camera
+            - server returns JSON + JPEG
+            - client publishes the returned image on server_cam_image
+            - client publishes Detection2DArray
+
+        On the server side:
+            This client code assumes the server response really is:
+            - JSON only   when "use_server_cam" omitted (default)
+            - JSON + JPEG when "use_server_cam" present
+
+        Note: the client and server must be configured consistently.            
+        """
+
         self.get_logger().info("Image Inference node started")
 
         if self.objects_allowed:
@@ -64,9 +94,9 @@ class ImageInferenceNode(Node):
         )
 
         if self.use_server_cam:
-            server_cam_image = "server_cam_image"
+            server_cam_image = "server_cam_image"  # topic to publish for visualization, uncompressed
             self.get_logger().info(f"Using server camera feed directly for inference, publishing '{server_cam_image}' topic for visualization")
-            self.image_pub = self.create_publisher(Image, "server_cam_image", 10)
+            self.image_pub = self.create_publisher(Image, server_cam_image, 10)
         else:
             self.get_logger().info(f"Subscribing to ROS CompressedImage topic '{self.image_topic}' for inference")
             self.image_sub = self.create_subscription(
@@ -78,6 +108,7 @@ class ImageInferenceNode(Node):
 
         self.setup_timer = self.create_timer(self.startup_delay_sec, self.setup)
         self.loop_timer = self.create_timer(self.ticker_interval_sec, self.loop_callback)
+        self.br = CvBridge()
 
         self.server_ready = False
         self.sock: Optional[socket.socket] = None
@@ -113,28 +144,46 @@ class ImageInferenceNode(Node):
             remaining -= len(chunk)
         return b"".join(chunks)
 
+
     def send_request(self, sock: socket.socket, frame_id: int, jpg_bytes: bytes) -> None:
+
+        payload_size = 0 if self.use_server_cam else len(jpg_bytes)
+
         header = {
             "frame_id": frame_id,
             "timestamp_ns": time.time_ns(),
             "encoding": "jpeg",
-            "payload_size": len(jpg_bytes),
+            "payload_size": payload_size,
         }
         hdr = json.dumps(header).encode("utf-8")
         sock.sendall(struct.pack(">I", len(hdr)))
         sock.sendall(hdr)
+
         if not self.use_server_cam:
             # when server is using its own camera feed directly, we don't send images from ROS at all, so skip sending empty payload
             sock.sendall(jpg_bytes)
 
+
     def recv_response(self, sock: socket.socket) -> dict:
         n = struct.unpack(">I", self.recv_exact(sock, 4))[0]
         data = self.recv_exact(sock, n)
+        response = json.loads(data.decode("utf-8"))
+
         if self.use_server_cam:
-            # Expect a JPEG image response from the server camera feed,
-            # publish it for visualization and inference result
-            pass
-        return json.loads(data.decode("utf-8"))
+            jpeg_len = struct.unpack(">I", self.recv_exact(sock, 4))[0]
+            jpeg_bytes = self.recv_exact(sock, jpeg_len)
+
+            # Publish returned server camera frame for visualization
+            np_buf = np.frombuffer(jpeg_bytes, dtype=np.uint8)
+            frame = cv2.imdecode(np_buf, cv2.IMREAD_COLOR)
+
+            if frame is not None:
+                msg = self.br.cv2_to_imgmsg(frame, encoding="bgr8")
+                msg.header.stamp = self.get_clock().now().to_msg()
+                msg.header.frame_id = self.frame_id_out
+                self.image_pub.publish(msg)
+
+        return response
 
     def connect_server(self) -> None:
         if self.sock is not None:
@@ -221,15 +270,20 @@ class ImageInferenceNode(Node):
         if not self.server_ready or self.sock is None:
             return
 
-        if self.latest_jpg is None:
-            return
+        if self.use_server_cam:
+            self.latest_image_seq += 1
+            frame_seq = self.latest_image_seq
+            jpg = b""
+        else:
+            if self.latest_jpg is None:
+                return
 
-        # Avoid resending the same frame over and over
-        if self.latest_image_seq == self.last_sent_seq:
-            return
+            # Avoid resending the same frame over and over
+            if self.latest_image_seq == self.last_sent_seq:
+                return
 
-        frame_seq = self.latest_image_seq
-        jpg = self.latest_jpg
+            frame_seq = self.latest_image_seq
+            jpg = self.latest_jpg
 
         try:
             self.send_request(self.sock, frame_seq, jpg)
@@ -261,19 +315,11 @@ class ImageInferenceNode(Node):
             f"queue_delay_ms={result.queue_delay_ms:.1f} detections={len(result.detections)}"
         )
 
-        """
-        for d in result.detections:
-            self.get_logger().info(
-                f"Server detected: label={d.label}, class_id={d.class_id}, "
-                f"confidence={d.confidence:.3f}, bbox={d.bbox_xyxy}"
-            )
-        """
-
         detection_array_msg = self.build_detection_array_msg(result)
 
         if detection_array_msg is not None:
-            # Only publish if there are detections above confidence threshold
             self.detection_pub.publish(detection_array_msg)
+
 
     def print_stats(self) -> None:
         now_monotonic = time.monotonic()
