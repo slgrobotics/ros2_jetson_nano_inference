@@ -24,7 +24,7 @@ import struct
 import time
 import cv2
 
-SERVER_HOST = "172.17.1.164"  # Jetson Nano "host" IP address (not container)
+SERVER_HOST = "jetson.local"  # Jetson Nano "host" IP address (not container)
 SERVER_PORT = 5001
 
 IMAGE_PATH = "../media/duckies_2_480x480.jpg"

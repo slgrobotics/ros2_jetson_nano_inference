@@ -19,8 +19,7 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'ticker_interval_sec': 0.1,
-            # 'server_host': '127.0.0.1',
-            'server_host': '172.17.1.164',  # Jetson Nano host IP (not container)
+            'server_host': 'jetson.local',  # Jetson Nano host IP (not container)
             'server_port': 5001,
             'startup_delay_sec': 5.0,
             'image_topic': '/camera/image_raw/compressed',

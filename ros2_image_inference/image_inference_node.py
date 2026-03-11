@@ -37,7 +37,7 @@ class ImageInferenceNode(Node):
         super().__init__("image_inference_node")
 
         self.declare_parameter("ticker_interval_sec", 0.1)
-        self.declare_parameter("server_host", "127.0.0.1")
+        self.declare_parameter("server_host", "jetson.local")  # Jetson Nano host IP (not container)
         self.declare_parameter("server_port", 5001)
         self.declare_parameter("startup_delay_sec", 5.0)
         self.declare_parameter("image_topic", "/camera/image_raw/compressed")
