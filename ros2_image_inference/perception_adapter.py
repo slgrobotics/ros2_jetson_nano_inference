@@ -4,7 +4,7 @@ import json
 import subprocess
 import time
 from math import pi
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import rclpy
 from rclpy.node import Node
@@ -14,7 +14,7 @@ from std_msgs.msg import Bool, Float32, String
 from vision_msgs.msg import Detection2DArray
 
 #
-# For the reasons of this designs see:
+# For the rationale behind this design, see:
 #  - https://github.com/slgrobotics/articubot_one/wiki/Behavior-Tree-for-Gesture-and-Face-Detection-Sensor
 #
 
@@ -56,8 +56,10 @@ class PerceptionAdapter(Node):
         # Label treated as the old "FACE" target
         self.declare_parameter("target_label", "person")
 
-        # Optional mapping of classes to "gesture names".
-        # Example: {"cup":"STOP", "giraffe":"LIKE", "cat":"MEOW", "dog":"WOOF", "chair":"OK"}
+        # Optional mapping of incoming class labels to "normalized class labels".
+        # Useful when an upstream publisher sends alternate labels or numeric IDs as strings.
+        # Normally is not needed - just set to '{}' and use the same labels as the upstream publisher.
+        # Example: {"0":"person","1":"cat","cup_small":"cup"}
         self.declare_parameter("label_map_json", "{}")
 
         # Ordered mapping:
@@ -67,19 +69,19 @@ class PerceptionAdapter(Node):
         # Earlier entries take priority over later ones, regardless of confidence.
         #
         # Example:
-        #   {"DOG":"YES","CHAIR":"SIX","CAT":"STOP"}
+        #   {"cup":"STOP", "bottle":"YES", "giraffe":"LIKE", "cat":"MEOW", "dog":"WOOF", "chair":"SIX"}
         #
         # If both DOG and CHAIR are detected, DOG wins because it appears first.
         self.declare_parameter("gesture_map_json", "{}")
 
         # Optional speech overrides keyed by final gesture/command name
-        # Example: {"STOP":"Stop","CUP":"Cup","FIRE_HYDRANT":"Fire hydrant"}
+        # Example: {"STOP":"Stop Now!","CUP":"Cup - do not drop","FIRE_HYDRANT":"Fire hydrant - do not park!"}
         self.declare_parameter("speech_map_json", "{}")
 
         # Suppress repeating the same command too frequently
         self.declare_parameter("gesture_cooldown_sec", 1.0)
 
-        self.verbose = self.get_parameter("verbose").value
+        self.verbose = bool(self.get_parameter("verbose").value)
         self.detection_topic = str(self.get_parameter("detection_topic").value)
         self.face_detected_sound = str(self.get_parameter("face_detected_sound").value)
         self.face_detected_text = str(self.get_parameter("face_detected_text").value)
@@ -132,6 +134,9 @@ class PerceptionAdapter(Node):
         self.last_gesture = ""
         self.last_gesture_time = 0.0
         self.last_said = ""
+        self.last_bt_log_face_detected: Optional[bool] = None
+        self.last_bt_log_gesture = ""
+        self.last_bt_log_time = 0.0
 
         # ---- publishers ----
         self.face_gesture_detected_pub = self.create_publisher(
@@ -185,11 +190,13 @@ class PerceptionAdapter(Node):
         combo_msg.header.frame_id = gesture
         combo_msg.illuminance = 1.0 if face_detected else 0.0
         combo_msg.variance = float(angle_error)
-        if self.verbose:
+
+        if self.verbose and self._should_log_bt_publish(face_detected, gesture):
             self.get_logger().info(
                 f"Publishing to BT: face_detected={face_detected}, gesture='{gesture}', "
                 f"angle_error={angle_error:.3f} radians ({angle_error * 180 / pi:.1f} deg)"
             )
+
         self.face_gesture_detected_pub.publish(combo_msg)
 
     def _publish_target_lost(self):
@@ -224,6 +231,25 @@ class PerceptionAdapter(Node):
             key=lambda item: item[1],
         )
         return best_label
+
+    def _should_log_bt_publish(self, face_detected: bool, gesture: str) -> bool:
+        now = time.time()
+
+        changed = (
+            self.last_bt_log_face_detected is None
+            or face_detected != self.last_bt_log_face_detected
+            or gesture != self.last_bt_log_gesture
+        )
+
+        timed_out = (now - self.last_bt_log_time) >= 2.0  # seconds between prints
+
+        if changed or timed_out:
+            self.last_bt_log_face_detected = face_detected
+            self.last_bt_log_gesture = gesture
+            self.last_bt_log_time = now
+            return True
+
+        return False
 
     # --------------------------------------------------
     # Callbacks
@@ -270,7 +296,7 @@ class PerceptionAdapter(Node):
         winning_label = self._pick_best_gesture_label(detected_non_target_labels)
         if winning_label is not None:
             gesture = self._map_label_to_gesture(winning_label)
-            self._handle_gesture(raw_label, gesture)
+            self._handle_gesture(winning_label, gesture, detected_non_target_labels)
 
         if best_target_x is not None:
             self._handle_face(best_target_x)
@@ -322,7 +348,7 @@ class PerceptionAdapter(Node):
                 f"distance_px={distance_px:.1f}, angle_error={angle_error:.3f}"
             )
 
-    def _handle_gesture(self, label: str, gesture: str):
+    def _handle_gesture(self, label: str, gesture: str, labels: Dict[str, float]):
         gesture = gesture.upper()
         now = time.time()
 
@@ -333,7 +359,9 @@ class PerceptionAdapter(Node):
         self.last_gesture_time = now
 
         if self.verbose:
-            self.get_logger().info(f'Label: "{label}"  -->  Gesture/command: "{gesture}"')
+            formatted_labels = {k: round(v, 2) for k, v in labels.items()}
+            self.get_logger().info(f'Objects detected: {formatted_labels}')
+            self.get_logger().info(f'Action Label: "{label}"  -->  Gesture/command: "{gesture}"')
 
         self.gesture_pub.publish(String(data=gesture))
 

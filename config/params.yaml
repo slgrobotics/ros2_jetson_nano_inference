@@ -2,6 +2,7 @@
 # Sensor driver configuration
 image_inference_node:
   ros__parameters:
+    verbose: True        # If true - print debug info about sent requests and received responses, recognized classes.
     ticker_interval_sec: 0.1
     server_host: 'jetson.local'  # Jetson Nano "host" IP address (not container)
     server_port: 5001
@@ -9,19 +10,28 @@ image_inference_node:
     image_topic: '/camera/image_raw/compressed'
     frame_id_out: "camera"
     min_confidence: 0.6    # do not publish if below this confidence threshold
-    objects_allowed: ['person', 'cup', 'dog', 'cat']  # Case sensitive. Empty list means allow all detected objects
+    objects_allowed: ['person', 'cup', 'bottle', 'cell phone', 'banana', 'book', 'scissors', 'dog', 'cat']  # Case sensitive. Empty list means allow all detected objects
     stats_period_sec: 5.0
-    use_server_cam: False  # do not send images from ROS, the server's camera feeds inference engine directly
+    #use_server_cam: True  # Default: false. If True - do not send images from ROS, the server's camera feeds inference engine directly
 
 
 # Perception adapter (BT topics relay) configuration
 perception_adapter:
   ros__parameters:
+    verbose: True        # If true - print debug info about recognized and passed detections.
     ticker_interval_sec: 0.1
     detection_topic: '/image_inference_detections'
     #face_detected_sound: 'my_face.wav'
     face_detected_text: 'I see you!'
     min_confidence: 0.6
     face_cooldown_sec: 2.0
-    camera_center_x: 320.0
-    target_label: 'person'
+    gesture_cooldown_sec: 1.0
+    camera_center_x: 320.0  # Assuming 640x480 input images. Adjust if different.
+    target_label: 'person'  # The "face detected" logic is applied only to this object class.
+    # Optional mapping of incoming class labels to "normalized class labels". Normally is not needed:
+    label_map_json: '{}'  # example: {"0":"person","1":"cat","cup_small":"cup"}',
+    # Optional JSON string mapping object labels to "gestures". If not set, capitalized label will be used:
+    gesture_map_json: '{"bottle":"STOP", "cup":"OK", "banana":"LIKE", "cat":"MEOW", "dog":"WOOF"}'
+    # Optional JSON string mapping gestures/commands to speech output. If not set, the gesture name will be used:
+    speech_map_json: '{"STOP":"Stop immediately!","OK":"good stuff!","scissors":"Careful, sharp!","FIRE_HYDRANT":"Fire hydrant - do not park!"}'
+

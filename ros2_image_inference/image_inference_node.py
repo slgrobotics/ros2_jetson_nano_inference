@@ -57,8 +57,8 @@ class ImageInferenceNode(Node):
         self.min_confidence = self.get_parameter("min_confidence").value
         self.objects_allowed = { s.strip() for s in self.get_parameter("objects_allowed").value if s.strip() }
         self.stats_period_sec = self.get_parameter("stats_period_sec").value
-        self.use_server_cam = self.get_parameter("use_server_cam").value
-        self.verbose = self.get_parameter("verbose").value
+        self.use_server_cam = bool(self.get_parameter("use_server_cam").value)
+        self.verbose = bool(self.get_parameter("verbose").value)
 
         """
         With "use_server_cam"=False: (default)
