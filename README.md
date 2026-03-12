@@ -100,7 +100,70 @@ If using the Nano's camera (`--use_server_cam` mode enabled on both the server a
 
 The image and overlays can be viewed in RQT or RViz as described above. Detections are consumed by the `perception_adapter` node and published for Behavior Tree consumption.
 
-### Behavior trees connection
+### Behavior trees connection - Perception Adapter
+
+`perception_adapter.py` is a ROS 2 node that bridges *generic object detections* produced by the image inference pipeline
+with the Behavior Tree (BT) [interface](https://github.com/slgrobotics/slg_bt_plugins) originally designed for face and gesture detection.
+
+It converts `vision_msgs/Detection2DArray` messages into the legacy topics expected by the existing BT plugins while extending the semantics to arbitrary detected objects.
+
+The design preserves (some) backward compatibility with the previous *face + gesture detector* architecture.
+
+The adapter:
+- converts *YOLO detections → BT commands*
+- preserves the *existing face/gesture interface*
+- allows robot behaviors to be triggered by *arbitrary objects*
+
+**Inputs**
+
+- Topic: `/image_inference_detections` Type: `vision_msgs/Detection2DArray`
+- Produced by the *image inference* node.
+
+**Outputs**
+```
+|       Topic               |       Type                |        Purpose               |
+|---------------------------|---------------------------|------------------------------|
+| `/bt/face_gesture_detect` | `sensor_msgs/Illuminance` | Combined BT message          |
+| `/fgs/face_detected`      | `std_msgs/Bool`           | Target visible flag          |
+| `/fgs/face_yaw_error`     | `std_msgs/Float32`        | Horizontal angle error       |
+| `/fgs/gesture_command`    | `std_msgs/String`         | Command derived from objects |
+```
+**Operation**
+- Target ("Face")
+- One *class label* (default *PERSON*) is treated as the tracked target.
+
+The adapter:
+- selects the highest-confidence instance  
+- computes target *yaw error* from the bounding box center  
+- publishes tracking information to BT
+
+**Commands:** All other detected objects (except the *target* class) become **commands**.
+
+Optional mapping (see [launch file](https://github.com/slgrobotics/ros2_jetson_nano_inference/blob/main/launch/ros2_image_inference.launch.py)):
+```
+'gesture_map_json': '{"bottle":"STOP", "cup":"OK", "banana":"LIKE", "cat":"MEOW", "dog":"WOOF"}'
+```
+
+Unmapped labels pass through:
+```
+giraffe → GIRAFFE
+chair → CHAIR
+```
+
+Only *one command per frame* is produced:
+- mapped labels win by **priority order** in the gesture map list
+- otherwise the **highest-confidence label** is used
+
+**Behavior Tree Interface**
+
+Published on: `/bt/face_gesture_detect`
+```
+|    Field      |     Meaning        |
+|---------------|--------------------|
+| `illuminance` | face detected flag |
+| `variance`    | yaw error          |
+| `frame_id`    | command string     |
+```
 
 See https://github.com/slgrobotics/slg_bt_plugins for more information.
 
