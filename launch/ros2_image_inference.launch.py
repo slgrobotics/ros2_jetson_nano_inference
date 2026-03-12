@@ -3,6 +3,9 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch_ros.actions import Node
 
+#
+# colcon build; source install/setup.bash; ros2 launch ros2_image_inference ros2_image_inference.launch.py
+#
 
 def generate_launch_description():
     # Get the package directory
