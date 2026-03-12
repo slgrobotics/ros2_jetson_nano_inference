@@ -128,12 +128,12 @@ The adapter:
 | `/fgs/face_yaw_error`     | `std_msgs/Float32`        | Horizontal angle error       |
 | `/fgs/gesture_command`    | `std_msgs/String`         | Command derived from objects |
 ```
-**Operation**
-- Target ("Face")
-- One *class label* (default *PERSON*) is treated as the tracked target.
+**Operation - "person"**
+- Target ("Face" in *face and gesture sensor* terms)
+- One *class label* (default *PERSON*) is treated as the tracked *target*.
 
 The adapter:
-- selects the highest-confidence instance  
+- selects the highest-confidence instance (e.g. of class *"person"*) 
 - computes target *yaw error* from the bounding box center  
 - publishes tracking information to BT
 
@@ -144,7 +144,7 @@ Optional mapping (see [launch file](https://github.com/slgrobotics/ros2_jetson_n
 'gesture_map_json': '{"bottle":"STOP", "cup":"OK", "banana":"LIKE", "cat":"MEOW", "dog":"WOOF"}'
 ```
 
-Unmapped labels pass through:
+Unmapped labels pass through, as capitalized *commands*:
 ```
 giraffe → GIRAFFE
 chair → CHAIR
@@ -156,7 +156,7 @@ Only *one command per frame* is produced:
 
 **Behavior Tree Interface**
 
-Published on: `/bt/face_gesture_detect`
+Published on: `/bt/face_gesture_detect` - type `sensor_msgs.msg.Illuminance` (borrowed/repurposed) 
 ```
 |    Field      |     Meaning        |
 |---------------|--------------------|
