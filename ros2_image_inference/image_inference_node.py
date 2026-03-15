@@ -219,6 +219,7 @@ class ImageInferenceNode(Node):
             # when server is using its own camera feed directly, we don't send images from ROS at all, so skip sending empty payload
             sock.sendall(jpg_bytes)
 
+        #self.get_logger().info(f"Sent request: frame_id={frame_id} payload_size={payload_size} request_jpeg={request_jpeg}")
 
     def recv_response(self, sock: socket.socket) -> dict:
         n = struct.unpack(">I", self.recv_exact(sock, 4))[0]
@@ -226,6 +227,8 @@ class ImageInferenceNode(Node):
         response_dict = json.loads(data.decode("utf-8"))
 
         has_jpeg = bool(response_dict.get("has_jpeg", False))
+
+        #self.get_logger().info(f"Received response: ok={response_dict.get('ok', False)}, has_jpeg={has_jpeg}")
 
         if has_jpeg:
             jpeg_len = struct.unpack(">I", self.recv_exact(sock, 4))[0]
