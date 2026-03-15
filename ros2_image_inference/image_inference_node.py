@@ -56,7 +56,6 @@ class ImageInferenceNode(Node):
         self.image_topic = self.get_parameter("image_topic").value
         self.frame_id_out = self.get_parameter("frame_id_out").value
         self.min_confidence = self.get_parameter("min_confidence").value
-        self.objects_allowed = { s.strip() for s in self.get_parameter("objects_allowed").value if s.strip() }
         self.stats_period_sec = self.get_parameter("stats_period_sec").value
         self.use_server_cam = bool(self.get_parameter("use_server_cam").value)
         self.verbose = bool(self.get_parameter("verbose").value)
@@ -89,6 +88,18 @@ class ImageInferenceNode(Node):
         """
 
         self.get_logger().info("Image Inference node started")
+
+        objects_allowed_param = list(
+            self.get_parameter("objects_allowed")
+                .get_parameter_value()
+                .string_array_value
+        )
+
+        self.objects_allowed = {
+            s.strip().lower()
+            for s in objects_allowed_param
+            if s.strip()
+        }
 
         if self.objects_allowed:
             self.get_logger().info(
@@ -274,7 +285,7 @@ class ImageInferenceNode(Node):
             if confidence < self.min_confidence:
                 continue
 
-            if self.objects_allowed and d.label not in self.objects_allowed:
+            if self.objects_allowed and d.label.lower() not in self.objects_allowed:
                 continue
 
             x1, y1, x2, y2 = d.bbox_xyxy

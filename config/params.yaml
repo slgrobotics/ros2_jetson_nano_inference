@@ -10,7 +10,8 @@ image_inference_node:
     image_topic: '/camera/image_raw/compressed'
     frame_id_out: "camera"
     min_confidence: 0.6    # do not publish if below this confidence threshold
-    objects_allowed: ['person', 'cup', 'bottle', 'cell phone', 'banana', 'book', 'scissors', 'dog', 'cat']  # Case sensitive. Empty list means allow all detected objects
+    objects_allowed: ['']  # Empty list means allow all detected objects.
+    #objects_allowed: ['person', 'cup', 'bottle', 'cell phone', 'banana', 'book', 'scissors', 'dog', 'cat']  # Not case sensitive.
     stats_period_sec: 5.0
     use_server_cam: True  # Default: false. If True - do not send images from ROS, the server's camera feeds inference engine directly
 

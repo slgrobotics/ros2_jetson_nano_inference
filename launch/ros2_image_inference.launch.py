@@ -21,7 +21,7 @@ def generate_launch_description():
         name='image_inference_node',
         output='screen',
         parameters=[{
-            "verbose": True,        # If true - print debug info about sent requests and received responses, recognized classes.
+            #"verbose": True,        # If true - print debug info about sent requests and received responses, recognized classes.
             'ticker_interval_sec': 0.1,
             'server_host': 'jetson.local',  # Jetson Nano host IP (not container)
             'server_port': 5001,
@@ -29,7 +29,8 @@ def generate_launch_description():
             'image_topic': '/camera/image_raw/compressed',
             'frame_id_out': 'camera',
             'min_confidence': 0.6,    # do not publish if below this confidence threshold
-            'objects_allowed': ['person', 'cup', 'bottle', 'cell phone', 'banana', 'book', 'scissors', 'dog', 'cat'], # Case sensitive. Empty list means allow all detected objects
+            'objects_allowed': [''],  # Empty list means allow all detected objects.
+            #'objects_allowed': ['person', 'cup', 'bottle', 'cell phone', 'banana', 'book', 'scissors', 'dog', 'cat'], # Not case sensitive.
             'stats_period_sec': 5.0,
             "use_server_cam": True,  # Default: false. If True - do not send images from ROS, the server's camera feeds inference engine directly
         }]
