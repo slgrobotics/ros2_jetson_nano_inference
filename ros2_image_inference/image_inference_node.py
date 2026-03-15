@@ -47,6 +47,7 @@ class ImageInferenceNode(Node):
         self.declare_parameter("stats_period_sec", 5.0)
         self.declare_parameter("use_server_cam", False)  # do not send images from ROS, the server's camera feeds inference engine directly
         self.declare_parameter("verbose", False)
+        self.declare_parameter("reconnect_interval_sec", 2.0)
 
         self.ticker_interval_sec = self.get_parameter("ticker_interval_sec").value
         self.server_host = self.get_parameter("server_host").value
@@ -59,6 +60,7 @@ class ImageInferenceNode(Node):
         self.stats_period_sec = self.get_parameter("stats_period_sec").value
         self.use_server_cam = bool(self.get_parameter("use_server_cam").value)
         self.verbose = bool(self.get_parameter("verbose").value)
+        self.reconnect_interval_sec = float(self.get_parameter("reconnect_interval_sec").value)
 
         """
         With "use_server_cam"=False: (default)
@@ -114,6 +116,17 @@ class ImageInferenceNode(Node):
 
         self.setup_timer = self.create_timer(self.startup_delay_sec, self.setup)
         self.loop_timer = self.create_timer(self.ticker_interval_sec, self.loop_callback)
+        self.reconnect_timer = self.create_timer(self.reconnect_interval_sec, self.reconnect_callback)
+        """
+        loop timer:
+            if connected -> send inference request
+            if disconnected -> do nothing
+
+        reconnect timer:
+            if disconnected -> try connect
+            if connected -> do nothing
+        """
+
         self.br = CvBridge()
 
         self.server_ready = False
@@ -211,15 +224,41 @@ class ImageInferenceNode(Node):
         self.server_ready = True
         self.get_logger().info("Connected to inference server")
 
-    def setup(self) -> None:
+    def disconnect_server(self) -> None:
+        self.server_ready = False
+        try:
+            if self.sock is not None:
+                self.sock.close()
+        except Exception:
+            pass
+        self.sock = None
+
+    def reconnect_callback(self) -> None:
+        if self.server_ready and self.sock is not None:
+            return
+
+        self.get_logger().info(
+            f"Trying to reconnect to inference server at {self.server_host}:{self.server_port}..."
+        )
+
         try:
             self.connect_server()
         except Exception as e:
             self.server_ready = False
-            self.get_logger().error(f"Failed to connect to inference server: {e}")
+            self.get_logger().warning(f"Reconnect failed: {e}")
+
+    def setup(self) -> None:
+        if self.server_ready and self.sock is not None:
+            self.setup_timer.cancel()
             return
 
-        self.setup_timer.cancel()
+        try:
+            self.connect_server()
+            self.setup_timer.cancel()
+        except Exception as e:
+            self.server_ready = False
+            self.get_logger().error(f"Failed to connect to inference server: {e}")
+
 
     def build_detection_array_msg(self, result: InferenceResult) -> Optional[Detection2DArray]:
         msg = Detection2DArray()
@@ -313,18 +352,7 @@ class ImageInferenceNode(Node):
 
         except Exception as e:
             self.get_logger().error(f"Inference request failed: {e}")
-            self.server_ready = False
-            try:
-                if self.sock is not None:
-                    self.sock.close()
-            except Exception:
-                pass
-            self.sock = None
-
-            try:
-                self.connect_server()
-            except Exception as reconnect_error:
-                self.get_logger().error(f"Reconnect failed: {reconnect_error}")
+            self.disconnect_server()
             return
 
         self.print_stats()
@@ -369,6 +397,7 @@ class ImageInferenceNode(Node):
     def destroy_node(self):
         self.loop_timer.cancel()
         self.setup_timer.cancel()
+        self.reconnect_timer.cancel()
         try:
             if self.sock is not None:
                 self.sock.close()
