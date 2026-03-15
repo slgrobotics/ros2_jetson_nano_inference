@@ -33,6 +33,7 @@ def generate_launch_description():
             #'objects_allowed': ['person', 'cup', 'bottle', 'cell phone', 'banana', 'book', 'scissors', 'dog', 'cat'], # Not case sensitive.
             'stats_period_sec': 5.0,
             "use_server_cam": True,  # Default: false. If True - do not send images from ROS, the server's camera feeds inference engine directly
+            "request_jpeg_every_n": 5,  # in server camera mode, request JPEG every N requests. 0 = always request JPEG, -1 = never, default=5.
         }]
         # parameters=[params_file]  # Load params from YAML instead
     )

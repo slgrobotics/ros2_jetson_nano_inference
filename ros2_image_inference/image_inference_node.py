@@ -48,6 +48,7 @@ class ImageInferenceNode(Node):
         self.declare_parameter("use_server_cam", False)  # do not send images from ROS, the server's camera feeds inference engine directly
         self.declare_parameter("verbose", False)
         self.declare_parameter("reconnect_interval_sec", 2.0)
+        self.declare_parameter("request_jpeg_every_n", 5)  # in server camera mode, request JPEG every N requests. 0 = always request JPEG, -1 = never.
 
         self.ticker_interval_sec = self.get_parameter("ticker_interval_sec").value
         self.server_host = self.get_parameter("server_host").value
@@ -60,6 +61,7 @@ class ImageInferenceNode(Node):
         self.use_server_cam = bool(self.get_parameter("use_server_cam").value)
         self.verbose = bool(self.get_parameter("verbose").value)
         self.reconnect_interval_sec = float(self.get_parameter("reconnect_interval_sec").value)
+        self.request_jpeg_every_n = int(self.get_parameter("request_jpeg_every_n").value)
 
         """
         With "use_server_cam"=False: (default)
@@ -71,7 +73,7 @@ class ImageInferenceNode(Node):
             - do not subscribe to ROS images
             - periodically send a header-only request to the server
             - server runs inference on its own camera
-            - server returns JSON + JPEG
+            - server returns JSON + JPEG (if "request_jpeg" is true for that request)
             - client publishes the returned image on server_cam_image
             - client publishes Detection2DArray
 
@@ -84,10 +86,19 @@ class ImageInferenceNode(Node):
             - 4-byte JPEG length
             - JPEG bytes            
 
-        Note: the client and server must be configured consistently.            
+        This allows detections to be returned on every request,
+        while JPEG images can be returned only on selected requests.
+            
+        Note: the client and server must be configured consistently (same "use_server_cam").            
         """
 
         self.get_logger().info("Image Inference node started")
+
+        if self.request_jpeg_every_n < 0:
+            self.get_logger().warning(
+                f"request_jpeg_every_n={self.request_jpeg_every_n} invalid; using 0"
+            )
+            self.request_jpeg_every_n = 0
 
         objects_allowed_param = list(
             self.get_parameter("objects_allowed")
@@ -174,8 +185,22 @@ class ImageInferenceNode(Node):
             remaining -= len(chunk)
         return b"".join(chunks)
 
+    def should_request_jpeg(self, request_number: int) -> bool:
+        # Only meaningful when server camera mode is used
+        if not self.use_server_cam:
+            return False  # when not using server camera, we always send JPEG bytes from ROS, so we don't need to request JPEG from server at all
 
-    def send_request(self, sock: socket.socket, frame_id: int, jpg_bytes: bytes) -> None:
+        n = self.request_jpeg_every_n
+
+        if n == 0:
+            return False  # never request JPEG, even in server camera mode
+
+        if n == 1:
+            return True  # always request JPEG in server camera mode
+
+        return (request_number % n) == 0  # request JPEG every N requests in server camera mode
+
+    def send_request(self, sock: socket.socket, frame_id: int, jpg_bytes: bytes, request_jpeg: bool = False) -> None:
 
         payload_size = 0 if self.use_server_cam else len(jpg_bytes)
 
@@ -184,6 +209,7 @@ class ImageInferenceNode(Node):
             "timestamp_ns": time.time_ns(),
             "encoding": "jpeg",
             "payload_size": payload_size,
+            "request_jpeg": request_jpeg,
         }
         hdr = json.dumps(header).encode("utf-8")
         sock.sendall(struct.pack(">I", len(hdr)))
@@ -349,8 +375,11 @@ class ImageInferenceNode(Node):
             frame_seq = self.latest_image_seq
             jpg = self.latest_jpg
 
+        request_number = self.total_server_calls + 1
+        request_jpeg = self.should_request_jpeg(request_number)
+
         try:
-            self.send_request(self.sock, frame_seq, jpg)
+            self.send_request(self.sock, frame_seq, jpg, request_jpeg=request_jpeg)
             sock_response = self.recv_response(self.sock)
             self.last_sent_seq = frame_seq
             self.server_calls_in_window += 1
@@ -373,7 +402,8 @@ class ImageInferenceNode(Node):
 
         self.get_logger().debug(
             f"frame_id={result.frame_id} infer_ms={result.infer_ms:.1f} "
-            f"queue_delay_ms={result.queue_delay_ms:.1f} detections={len(result.detections)}"
+            f"queue_delay_ms={result.queue_delay_ms:.1f} detections={len(result.detections)} "
+            f"request_jpeg={request_jpeg} has_jpeg={sock_response.get('has_jpeg', False)}"
         )
 
         detection_array_msg = self.build_detection_array_msg(result)
