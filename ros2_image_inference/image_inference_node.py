@@ -309,8 +309,11 @@ class ImageInferenceNode(Node):
 
             msg.detections.append(detection)
 
-        if len(msg.detections) == 0:
-            return None  # no detections above confidence threshold, return None to indicate empty result
+        # Normally we want to publish message with empty detections, so downstream nodes can get the updated header
+        #  and know that inference was performed on a new frame, even if nothing was detected with confidence above the threshold.
+        #  If you really want to skip publishing in case of no detections, uncomment the following lines:
+        #if len(msg.detections) == 0:
+        #    return None  # no detections above confidence threshold, return None to indicate empty result
 
         msg.header = header
 
