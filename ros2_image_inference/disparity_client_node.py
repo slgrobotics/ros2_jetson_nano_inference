@@ -214,18 +214,19 @@ class UdpSparseCloudReceiver(Node):
         return msg
 
 
-def main(args=None) -> None:
+def main(args=None):
     rclpy.init(args=args)
     node = UdpSparseCloudReceiver()
 
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
-        pass
+        print("Interrupted by user.")
     finally:
         node.destroy_node()
-        rclpy.shutdown()
 
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == "__main__":
     main()
