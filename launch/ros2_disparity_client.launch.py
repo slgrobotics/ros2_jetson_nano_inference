@@ -46,7 +46,23 @@ def generate_launch_description():
         output='screen'
     )
 
+    # static transform publisher for RViz2:
+    tf_to_map = Node(package = "tf2_ros", 
+                    executable = "static_transform_publisher",
+                    arguments=[
+                        '--x', '0.0',     # X translation in meters
+                        '--y', '0.0',     # Y translation in meters
+                        '--z', '1.0',     # Z translation in meters
+                        '--roll', '0.0',  # Roll in radians
+                        '--pitch', '0.0', # Pitch in radians
+                        '--yaw', '0.0',   # Yaw in radians (e.g., 90 degrees)
+                        '--frame-id', 'map', # Parent frame ID
+                        '--child-frame-id', 'stereo_camera' # Child frame ID
+                    ]
+   )
+
     return LaunchDescription([
         disparity_client_node,
+        tf_to_map,
         rviz,
     ])
