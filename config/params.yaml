@@ -38,3 +38,14 @@ perception_adapter:
     # Optional JSON string mapping gestures/commands to speech output. If not set, the gesture name will be used:
     speech_map_json: '{"STOP":"Stop immediately!","OK":"good stuff!","scissors":"Careful, sharp!","FIRE_HYDRANT":"Fire hydrant - do not park!"}'
 
+# Stereo -> PointCloud2 node parameters:
+disparity_client_node:
+  ros__parameters:
+    verbose: True        # If true - print debug info.
+    ticker_interval_sec: 0.1
+    bind_ip: "0.0.0.0"
+    port: 5005
+    topic: "/stereo/sparse_cloud"
+    frame_id: "stereo_camera"
+    socket_timeout_sec: 0.0    # non-blocking
+    log_every_n_packets: 10

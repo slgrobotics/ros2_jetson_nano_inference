@@ -37,6 +37,7 @@ setup(
          'console_scripts': [
             f'image_inference_node = {package_name}.image_inference_node:main',
             f'perception_adapter = {package_name}.perception_adapter:main',
+            f"disparity_client_node = {package_name}.disparity_client_node:main",
          ],
      },
 )
