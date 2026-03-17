@@ -4,7 +4,9 @@ from launch import LaunchDescription
 from launch_ros.actions import Node
 
 #
-# colcon build; source install/setup.bash; ros2 launch ros2_image_inference ros2_image_inference.launch.py
+# See https://github.com/slgrobotics/jetson_nano_b01/blob/main/src/stereo/disparity_server.py
+#
+# colcon build; source install/setup.bash; ros2 launch ros2_image_inference ros2_disparity_client.launch.py
 #
 
 def generate_launch_description():
@@ -33,6 +35,18 @@ def generate_launch_description():
         # parameters=[params_file]  # Load params from YAML instead
     )
 
+    # Visualize PointCloud2 in RViz2:
+    rviz_config = os.path.join(package_dir, 'config', 'config.rviz')
+
+    rviz = Node(
+        package='rviz2',
+        executable='rviz2',
+        arguments=['-d', rviz_config],
+        parameters=[{'use_sim_time': False}],
+        output='screen'
+    )
+
     return LaunchDescription([
         disparity_client_node,
+        rviz,
     ])
