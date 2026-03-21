@@ -36,11 +36,18 @@ import socket
 import struct
 from typing import List, Tuple
 
+import json
+import numpy as np
+
+import cv2
+from cv_bridge import CvBridge
+
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 
 from std_msgs.msg import Header
+from sensor_msgs.msg import Image
 from sensor_msgs.msg import PointCloud2, PointField
 from sensor_msgs_py import point_cloud2
 
@@ -59,11 +66,20 @@ class UdpSparseCloudReceiver(Node):
         self.declare_parameter("verbose", False)
         self.declare_parameter("bind_ip", "0.0.0.0")
         self.declare_parameter("port", 5005)
-        self.declare_parameter("topic", "/stereo/sparse_cloud")
+        self.declare_parameter("topic", "stereo/sparse_cloud")
         self.declare_parameter("frame_id", "stereo_camera")
         self.declare_parameter("ticker_interval_sec", 0.1)  # 10 Hz UDP socket poll timer
         self.declare_parameter("socket_timeout_sec", 0.0)   # non-blocking
         self.declare_parameter("log_every_n_packets", 10)
+
+        self.declare_parameter("image_topic", "camera/image_raw")
+        self.declare_parameter("tcp_host", "jetson.local")
+        self.declare_parameter("tcp_port", 5006)
+        self.declare_parameter("request_image_every_sec", 0.5)
+        self.declare_parameter("jpeg_max_width", 320)
+        self.declare_parameter("jpeg_max_height", 180)
+        self.declare_parameter("jpeg_quality", 60)
+        self.declare_parameter("tcp_timeout_sec", 5.0)
 
         self.verbose = bool(self.get_parameter("verbose").value)
         bind_ip = str(self.get_parameter("bind_ip").value)
@@ -73,6 +89,20 @@ class UdpSparseCloudReceiver(Node):
         ticker_interval_sec = float(self.get_parameter("ticker_interval_sec").value)
         socket_timeout_sec = float(self.get_parameter("socket_timeout_sec").value)
         self.log_every_n_packets = int(self.get_parameter("log_every_n_packets").value)
+
+        image_topic = str(self.get_parameter("image_topic").value)
+        self.tcp_host = str(self.get_parameter("tcp_host").value)
+        self.tcp_port = int(self.get_parameter("tcp_port").value)
+        self.request_image_every_sec = float(self.get_parameter("request_image_every_sec").value)
+        self.jpeg_max_width = int(self.get_parameter("jpeg_max_width").value)
+        self.jpeg_max_height = int(self.get_parameter("jpeg_max_height").value)
+        self.jpeg_quality = int(self.get_parameter("jpeg_quality").value)
+        self.tcp_timeout_sec = float(self.get_parameter("tcp_timeout_sec").value)
+
+        self.br = CvBridge()
+        self.tcp_sock = None
+
+        self.image_pub = self.create_publisher(Image, image_topic, 10)
 
         qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -98,6 +128,10 @@ class UdpSparseCloudReceiver(Node):
         ]
 
         self.timer = self.create_timer(ticker_interval_sec, self.poll_socket)
+        self.image_timer = self.create_timer(
+            self.request_image_every_sec,
+            self.image_request_callback,
+        )
 
         self.get_logger().info(
             f"Listening for UDP sparse cloud packets on {bind_ip}:{port}, "
@@ -106,10 +140,130 @@ class UdpSparseCloudReceiver(Node):
 
     def destroy_node(self):
         try:
+            self.timer.cancel()
+        except Exception:
+            pass
+
+        try:
+            self.image_timer.cancel()
+        except Exception:
+            pass
+
+        try:
             self.sock.close()
         except Exception:
             pass
+
+        self.disconnect_image_server()
         super().destroy_node()
+
+
+    def recv_exact(self, sock: socket.socket, n: int) -> bytes:
+        chunks = []
+        remaining = n
+        while remaining > 0:
+            chunk = sock.recv(remaining)
+            if not chunk:
+                raise ConnectionError("socket closed")
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        return b"".join(chunks)
+
+    def send_json_request(self, sock: socket.socket, obj: dict) -> None:
+        data = json.dumps(obj, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        sock.sendall(struct.pack(">I", len(data)))
+        sock.sendall(data)
+
+    def recv_image_response(self, sock: socket.socket):
+        n = struct.unpack(">I", self.recv_exact(sock, 4))[0]
+        data = self.recv_exact(sock, n)
+        response = json.loads(data.decode("utf-8"))
+
+        jpg_bytes = None
+        if bool(response.get("has_jpeg", False)):
+            jpeg_len = struct.unpack(">I", self.recv_exact(sock, 4))[0]
+            jpg_bytes = self.recv_exact(sock, jpeg_len)
+
+        return response, jpg_bytes
+
+    def connect_image_server(self) -> None:
+        self.disconnect_image_server()
+        self.get_logger().info(
+            f"Connecting to image server at {self.tcp_host}:{self.tcp_port}..."
+        )
+        self.tcp_sock = socket.create_connection(
+            (self.tcp_host, self.tcp_port),
+            timeout=self.tcp_timeout_sec,
+        )
+        self.tcp_sock.settimeout(self.tcp_timeout_sec)
+        self.get_logger().info("Connected to image server")
+
+    def disconnect_image_server(self) -> None:
+        try:
+            if self.tcp_sock is not None:
+                self.tcp_sock.close()
+        except Exception:
+            pass
+        self.tcp_sock = None
+
+
+    def image_request_callback(self):
+        if self.tcp_sock is None:
+            try:
+                self.connect_image_server()
+            except Exception as exc:
+                self.get_logger().warning(f"Image server connect failed: {exc}")
+                return
+
+        try:
+            req = {
+                "request_jpeg": True,
+                "max_width": self.jpeg_max_width,
+                "max_height": self.jpeg_max_height,
+                "jpeg_quality": self.jpeg_quality,
+                "payload_size": 0,
+            }
+
+            self.send_json_request(self.tcp_sock, req)
+            response, jpg_bytes = self.recv_image_response(self.tcp_sock)
+
+            if not response.get("ok", False):
+                self.get_logger().warning(
+                    f"Image server error: {response.get('error', 'unknown')}"
+                )
+                return
+
+            if not response.get("has_jpeg", False) or not jpg_bytes:
+                return
+
+            np_buf = np.frombuffer(jpg_bytes, dtype=np.uint8)
+            frame = cv2.imdecode(np_buf, cv2.IMREAD_COLOR)
+            if frame is None:
+                self.get_logger().warning("Failed to decode JPEG from image server")
+                return
+
+            msg = self.br.cv2_to_imgmsg(frame, encoding="bgr8")
+
+            stamp_ns = int(response.get("timestamp_ns", 0))
+            if stamp_ns > 0:
+                msg.header.stamp.sec = stamp_ns // 1_000_000_000
+                msg.header.stamp.nanosec = stamp_ns % 1_000_000_000
+            else:
+                msg.header.stamp = self.get_clock().now().to_msg()
+
+            msg.header.frame_id = self.frame_id
+            self.image_pub.publish(msg)
+
+            if self.verbose:
+                seq = response.get("seq", -1)
+                self.get_logger().info(
+                    f"Published raw image from TCP server: seq={seq}, shape={frame.shape[1]}x{frame.shape[0]}"
+                )
+
+        except Exception as exc:
+            self.get_logger().warning(f"TCP image request failed: {exc}")
+            self.disconnect_image_server()
+
 
     def poll_socket(self) -> None:
         """
