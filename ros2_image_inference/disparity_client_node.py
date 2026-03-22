@@ -1,36 +1,58 @@
 #!/usr/bin/env python3
 
-"""
-@brief
-ROS 2 UDP receiver for sparse stereo point cloud packets.
-
-This node listens for UDP packets produced by the Jetson stereo disparity
-server, decodes the packet header and sparse XYZ point records, and publishes
-the result as a sensor_msgs/PointCloud2 message.
-
-See https://github.com/slgrobotics/jetson_nano_b01/blob/main/src/stereo/disparity_server.py
-
-Expected packet format must match the sender exactly:
-
-Header: <4sBBBBIQHH
-  magic       4s   "SPC2"
-  version     B
-  rows        B
-  cols        B
-  reserved    B
-  seq         I
-  stamp_ns    Q
-  point_count H
-  reserved2   H
-
-Point record: <ffffHH
-  x           f    meters
-  y           f    meters
-  z           f    meters
-  confidence  f    0..1
-  row         H
-  col         H
-"""
+# ========================================================
+# ROS 2 stereo client node for sparse point cloud and preview image visualization.
+#
+# This node receives sparse 3D point data from the Jetson Nano (or other streamer) over UDP,
+# reconstructs a PointCloud2 message, and publishes it for downstream use
+# (e.g., Nav2 obstacle processing and RViz2 visualization).
+#
+# In parallel, it connects to the Nano’s TCP image server to request the latest
+# rectified left preview image as JPEG, decodes it, publishes it as a raw ROS
+# image, and derives approximate per-point RGB values from the corresponding
+# grid cells.
+#
+# The resulting PointCloud2 contains:
+# - geometry (x, y, z)
+# - packed RGB color for visualization
+# - confidence
+# - grid row/column metadata
+#
+# Key features:
+# - UDP reception of sparse stereo point data
+# - TCP on-demand retrieval of preview JPEG frames
+# - Raw image publication for RViz2 and RQt
+# - Approximate point-cloud colorization from image grid cells
+# - Single PointCloud2 topic usable for both debugging and navigation
+#
+# Intended use:
+# - Visualizing stereo-derived sparse clouds in RViz2
+# - Supplying point clouds to Nav2 / local costmap obstacle layers
+# - Debugging perception alignment between cloud and camera image
+#
+# See https://github.com/slgrobotics/jetson_nano_b01/blob/main/src/stereo/disparity_server.py
+#
+# Expected packet format must match the sender exactly:
+#
+# Header: <4sBBBBIQHH
+#   magic       4s   "SPC2"
+#   version     B
+#   rows        B
+#   cols        B
+#   reserved    B
+#   seq         I
+#   stamp_ns    Q
+#   point_count H
+#   reserved2   H
+#
+# Point record: <ffffHH
+#   x           f    meters
+#   y           f    meters
+#   z           f    meters
+#   confidence  f    0..1
+#   row         H
+#   col         H
+# ========================================================
 
 import socket
 import struct
@@ -401,7 +423,7 @@ class UdpSparseCloudReceiver(Node):
 
         patch = img[py0:py1, px0:px1]
         if patch.size == 0:
-            return self.pack_rgb_float(255, 255, 255)
+            return self.pack_rgb_float(255, 0, 255)  # magenta for unavailable color
 
         if self.use_mean_color:
             mean_bgr = patch.reshape(-1, 3).mean(axis=0)
