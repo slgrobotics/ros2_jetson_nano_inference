@@ -35,6 +35,7 @@ Point record: <ffffHH
 import socket
 import struct
 from typing import List, Tuple
+import threading
 
 import json
 import numpy as np
@@ -68,6 +69,8 @@ class UdpSparseCloudReceiver(Node):
         self.declare_parameter("port", 5005)
         self.declare_parameter("topic", "stereo/sparse_cloud")
         self.declare_parameter("frame_id", "stereo_camera")
+        self.declare_parameter("color_patch_fraction", 0.5)   # center patch size relative to cell
+        self.declare_parameter("use_mean_color", True)
         self.declare_parameter("ticker_interval_sec", 0.1)  # 10 Hz UDP socket poll timer
         self.declare_parameter("socket_timeout_sec", 0.0)   # non-blocking
         self.declare_parameter("log_every_n_packets", 10)
@@ -81,11 +84,15 @@ class UdpSparseCloudReceiver(Node):
         self.declare_parameter("jpeg_quality", 60)
         self.declare_parameter("tcp_timeout_sec", 5.0)
 
+
+
         self.verbose = bool(self.get_parameter("verbose").value)
         bind_ip = str(self.get_parameter("bind_ip").value)
         port = int(self.get_parameter("port").value)
         topic = str(self.get_parameter("topic").value)
         self.frame_id = str(self.get_parameter("frame_id").value)
+        self.color_patch_fraction = float(self.get_parameter("color_patch_fraction").value)
+        self.use_mean_color = bool(self.get_parameter("use_mean_color").value)
         ticker_interval_sec = float(self.get_parameter("ticker_interval_sec").value)
         socket_timeout_sec = float(self.get_parameter("socket_timeout_sec").value)
         self.log_every_n_packets = int(self.get_parameter("log_every_n_packets").value)
@@ -122,9 +129,10 @@ class UdpSparseCloudReceiver(Node):
             PointField(name="x", offset=0,  datatype=PointField.FLOAT32, count=1),
             PointField(name="y", offset=4,  datatype=PointField.FLOAT32, count=1),
             PointField(name="z", offset=8,  datatype=PointField.FLOAT32, count=1),
-            PointField(name="confidence", offset=12, datatype=PointField.FLOAT32, count=1),
-            PointField(name="row", offset=16, datatype=PointField.UINT16, count=1),
-            PointField(name="col", offset=18, datatype=PointField.UINT16, count=1),
+            PointField(name="rgb", offset=12, datatype=PointField.FLOAT32, count=1),
+            PointField(name="confidence", offset=16, datatype=PointField.FLOAT32, count=1),
+            PointField(name="row", offset=20, datatype=PointField.UINT16, count=1),
+            PointField(name="col", offset=22, datatype=PointField.UINT16, count=1),
         ]
 
         self.timer = self.create_timer(ticker_interval_sec, self.poll_socket)
@@ -132,6 +140,10 @@ class UdpSparseCloudReceiver(Node):
             self.request_image_every_sec,
             self.image_request_callback,
         )
+
+        self.latest_image = None
+        self.latest_image_stamp_ns = 0
+        self.latest_image_lock = threading.Lock()
 
         self.get_logger().info(
             f"Listening for UDP sparse cloud packets on {bind_ip}:{port}, "
@@ -254,6 +266,10 @@ class UdpSparseCloudReceiver(Node):
             msg.header.frame_id = self.frame_id
             self.image_pub.publish(msg)
 
+            with self.latest_image_lock:
+                self.latest_image = frame.copy()
+                self.latest_image_stamp_ns = stamp_ns
+
             if self.verbose:
                 seq = response.get("seq", -1)
                 self.get_logger().info(
@@ -348,6 +364,54 @@ class UdpSparseCloudReceiver(Node):
 
         return seq, stamp_ns, rows, cols, points
 
+    # RGB component helpers:
+
+    def pack_rgb_float(self, r: int, g: int, b: int) -> float:
+        rgb_uint32 = (int(r) << 16) | (int(g) << 8) | int(b)
+        return struct.unpack("f", struct.pack("I", rgb_uint32))[0]
+
+    def get_latest_image_copy(self):
+        with self.latest_image_lock:
+            if self.latest_image is None:
+                return None
+            return self.latest_image.copy()
+
+    def sample_cell_rgb(self, img: np.ndarray, row: int, col: int, rows: int, cols: int) -> float:
+        h, w = img.shape[:2]
+
+        x0 = int(col * w / cols)
+        x1 = int((col + 1) * w / cols)
+        y0 = int(row * h / rows)
+        y1 = int((row + 1) * h / rows)
+
+        cell_w = max(1, x1 - x0)
+        cell_h = max(1, y1 - y0)
+
+        frac = max(0.05, min(1.0, self.color_patch_fraction))
+        patch_w = max(1, int(round(cell_w * frac)))
+        patch_h = max(1, int(round(cell_h * frac)))
+
+        cx = (x0 + x1) // 2
+        cy = (y0 + y1) // 2
+
+        px0 = max(x0, cx - patch_w // 2)
+        px1 = min(x1, px0 + patch_w)
+        py0 = max(y0, cy - patch_h // 2)
+        py1 = min(y1, py0 + patch_h)
+
+        patch = img[py0:py1, px0:px1]
+        if patch.size == 0:
+            return self.pack_rgb_float(255, 255, 255)
+
+        if self.use_mean_color:
+            mean_bgr = patch.reshape(-1, 3).mean(axis=0)
+            b, g, r = [int(round(v)) for v in mean_bgr]
+        else:
+            b, g, r = [int(v) for v in patch[patch.shape[0] // 2, patch.shape[1] // 2]]
+
+        return self.pack_rgb_float(r, g, b)
+
+
     def build_pointcloud2(
         self,
         seq: int,
@@ -358,12 +422,21 @@ class UdpSparseCloudReceiver(Node):
     ) -> PointCloud2:
         header = Header()
         header.frame_id = self.frame_id
-
-        # Use sender timestamp if possible.
         header.stamp.sec = int(stamp_ns // 1_000_000_000)
         header.stamp.nanosec = int(stamp_ns % 1_000_000_000)
 
-        msg = point_cloud2.create_cloud(header, self.fields, points)
+        img = self.get_latest_image_copy()
+
+        colored_points = []
+        for x, y, z, confidence, row, col in points:
+            if img is not None:
+                rgb = self.sample_cell_rgb(img, row, col, rows, cols)
+            else:
+                rgb = self.pack_rgb_float(255, 255, 255)
+
+            colored_points.append((x, y, z, rgb, confidence, row, col))
+
+        msg = point_cloud2.create_cloud(header, self.fields, colored_points)
         msg.is_dense = False
         return msg
 
