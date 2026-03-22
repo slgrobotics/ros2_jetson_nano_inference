@@ -26,11 +26,21 @@ def generate_launch_description():
             'verbose': True,        # If true - print debug info.
             'bind_ip': "0.0.0.0",
             'port': 5005,
-            'topic': "/stereo/sparse_cloud",
+            'cloud_topic': "/stereo/sparse_cloud",
             'frame_id': "stereo_camera",
-            'ticker_interval_sec': 0.1,  # 10 Hz UDP socket poll timer
-            'socket_timeout_sec': 0.0,    # non-blocking
-            'log_every_n_packets': 10,
+            'ticker_interval_sec': 0.1,   # 10 Hz UDP socket poll timer
+            'socket_timeout_sec': 0.0,    # 0 for non-blocking
+            'log_every_n_packets': 10,    # 0 for no log
+            'color_patch_fraction': 0.5,  # center patch size relative to cell
+            'use_mean_color': True,
+            'image_topic': "camera/image_raw",
+            'tcp_host': "jetson.local",
+            'tcp_port': 5006,
+            'request_image_every_sec': 0.5,
+            'jpeg_max_width': 320,
+            'jpeg_max_height': 180,
+            'jpeg_quality': 60,
+            'tcp_timeout_sec': 5.0,
         }]
         # parameters=[params_file]  # Load params from YAML instead
     )

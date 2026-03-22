@@ -89,13 +89,13 @@ class UdpSparseCloudReceiver(Node):
         self.declare_parameter("verbose", False)
         self.declare_parameter("bind_ip", "0.0.0.0")
         self.declare_parameter("port", 5005)
-        self.declare_parameter("topic", "stereo/sparse_cloud")
+        self.declare_parameter("cloud_topic", "stereo/sparse_cloud")
         self.declare_parameter("frame_id", "stereo_camera")
         self.declare_parameter("color_patch_fraction", 0.5)   # center patch size relative to cell
         self.declare_parameter("use_mean_color", True)
         self.declare_parameter("ticker_interval_sec", 0.1)  # 10 Hz UDP socket poll timer
-        self.declare_parameter("socket_timeout_sec", 0.0)   # non-blocking
-        self.declare_parameter("log_every_n_packets", 10)
+        self.declare_parameter("socket_timeout_sec", 0.0)   # 0 for non-blocking
+        self.declare_parameter("log_every_n_packets", 10)   # 0 for no log
 
         self.declare_parameter("image_topic", "camera/image_raw")
         self.declare_parameter("tcp_host", "jetson.local")
@@ -111,7 +111,7 @@ class UdpSparseCloudReceiver(Node):
         self.verbose = bool(self.get_parameter("verbose").value)
         bind_ip = str(self.get_parameter("bind_ip").value)
         port = int(self.get_parameter("port").value)
-        topic = str(self.get_parameter("topic").value)
+        cloud_topic = str(self.get_parameter("cloud_topic").value)
         self.frame_id = str(self.get_parameter("frame_id").value)
         self.color_patch_fraction = float(self.get_parameter("color_patch_fraction").value)
         self.use_mean_color = bool(self.get_parameter("use_mean_color").value)
@@ -138,7 +138,7 @@ class UdpSparseCloudReceiver(Node):
             history=HistoryPolicy.KEEP_LAST,
             depth=5,
         )
-        self.pub_cloud = self.create_publisher(PointCloud2, topic, qos)
+        self.pub_cloud = self.create_publisher(PointCloud2, cloud_topic, qos)
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind((bind_ip, port))
@@ -169,7 +169,7 @@ class UdpSparseCloudReceiver(Node):
 
         self.get_logger().info(
             f"Listening for UDP sparse cloud packets on {bind_ip}:{port}, "
-            f"publishing PointCloud2 on {topic}"
+            f"publishing PointCloud2 on {cloud_topic}"
         )
 
     def destroy_node(self):
