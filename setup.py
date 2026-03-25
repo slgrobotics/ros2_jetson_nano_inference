@@ -32,7 +32,7 @@ setup(
     zip_safe=True,
     maintainer='Sergei Grichine',
     maintainer_email='slg@quakemap.com',
-    description='Face and Gesture detection node',
+    description='ROS2 nodes for object detection and stereo vision using Jetson Nano B01 ',
     license='MIT',
      entry_points={
          'console_scripts': [
